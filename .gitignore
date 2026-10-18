@@ -1,0 +1,18 @@
+# Dependencies and generated packages
+node_modules/
+*.tgz
+
+# Local Pi profiles, runtime state and credentials
+.pi/
+.controlled-dev/
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+
+# Generated verification output
+*.log
+coverage/
+.DS_Store

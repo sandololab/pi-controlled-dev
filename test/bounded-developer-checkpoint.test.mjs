@@ -1,0 +1,127 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {appendFileSync,chmodSync,cpSync,existsSync,linkSync,mkdirSync,mkdtempSync,readFileSync,renameSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {execFileSync} from 'node:child_process';
+import {installSourceLoader} from './load-source.mjs';
+import {restartFixture} from './recovery-fixture.mjs';
+installSourceLoader();
+const api=await import('../src/contracts.ts'),cp=await import('../src/bounded-developer-checkpoint.ts');
+const {initializeProjectCustodian}=await import('../src/project-custodian.ts');
+const {resolveProjectStorage}=await import('../src/project-storage.ts');
+const {DurableStore}=await import('../src/store.ts');
+const {LockManager}=await import('../src/lock-manager.ts');
+const h=await import('../src/project-handoff.ts');
+const git=(repo,...args)=>execFileSync('git',['-C',repo,...args],{encoding:'utf8'}).trim();
+async function fixture(t){
+ const root=mkdtempSync(join(tmpdir(),'bounded-portable-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const repo=join(root,'repo'),data=join(root,'data');mkdirSync(repo);mkdirSync(data);
+ git(repo,'init','-q');writeFileSync(join(repo,'file.txt'),'base\n');git(repo,'add','file.txt');
+ git(repo,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','base');
+ appendFileSync(join(repo,'.git','info','exclude'),'\n/.controlled-dev/\n/Documentazione/\n');
+ mkdirSync(join(repo,'.controlled-dev'));mkdirSync(join(repo,'Documentazione'));mkdirSync(join(repo,'Documentazione','Notes'));writeFileSync(join(repo,'Documentazione','Notes','personal.md'),'Appunti personali\n');
+ initializeProjectCustodian(repo,{schemaVersion:1,projectId:api.hashBytes(Buffer.from(repo)),originalRepoRoot:repo,
+  baselineCommit:git(repo,'rev-parse','HEAD'),baselineTree:git(repo,'rev-parse','HEAD^{tree}')},()=>{});
+ const f=await restartFixture(root,'DEVELOPER_BOUNDED',false,false,{},undefined,{existingRepo:true});
+ t.after(()=>{try{f.orchestrator.dispose()}catch{}});
+ const options=action=>f.orchestrator.withProjectLease((manager,workspaceLock)=>action({manager,workspaceLock,inspect:()=> 'ACCEPT'}));
+ return {...f,root,options};
+}
+test('bounded clean baseline and terminal transcript survive deleting every old host path, with no candidate or history rewrite',async t=>{
+ const f=await fixture(t),before=DurableStore.load(f.storeRoot),source=before.state.runs.at(-1),oldWork=before.records.find(r=>r.id===source.assignmentId).value.workRoot;
+ const cp1=f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,o));
+ const cp2=f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,o));assert.equal(cp1.descriptorDigest,cp2.descriptorDigest);
+ assert.deepEqual(DurableStore.load(f.storeRoot),before);assert.equal(before.state.candidate,undefined);
+ assert.equal(cp1.descriptor.kind,'BOUNDED_DEVELOPER_BASELINE');
+ assert.throws(()=>cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data),/CHECKPOINT_STALE|RELEASE_REQUIRED/);
+ f.orchestrator.dispose();assert.equal(h.readProjectHandoff(f.repo).ownerDisposition,'RELEASED_FOR_TRANSFER');
+ const moved=join(f.root,'new host project'),newData=join(f.root,'new host private');cpSync(f.repo,moved,{recursive:true,preserveTimestamps:true});
+ rmSync(f.repo,{recursive:true});rmSync(f.data,{recursive:true});rmSync(oldWork,{recursive:true});rmSync(join(f.root,'transcripts'),{recursive:true});mkdirSync(newData);
+ for(const old of [f.repo,f.data,oldWork,source.childSessionId])assert.equal(existsSync(old),false);
+ const taskRoot=join(resolveProjectStorage(newData,moved).projectRoot,'tasks','task');
+ const saved=cp.readBoundedDeveloperCheckpoint(moved,taskRoot,newData);assert.ok(saved);assert.equal(saved.descriptorDigest,cp1.descriptorDigest);
+ assert.deepEqual(DurableStore.load(taskRoot),before);assert.equal(readFileSync(join(moved,'Documentazione','Notes','personal.md'),'utf8'),'Appunti personali\n');
+ const manager=new LockManager(newData,'new-native','new-runtime'),locks=manager.acquire('task',moved);t.after(()=>{try{manager.releaseAll(locks)}catch{}});
+ const work=join(newData,'controlled-dev','workspaces','portable-baseline');let checked=0;
+ assert.throws(()=>cp.materializeBoundedDeveloperCheckpoint({...saved},work,{manager,workspaceLock:locks.workspace,assertAuthorized(){checked++}}),/CAPABILITY_INVALID/);
+ assert.equal(existsSync(work),false);assert.throws(()=>cp.materializeBoundedDeveloperCheckpoint(saved,work,{manager,workspaceLock:locks.workspace,assertAuthorized(){throw new Error('fresh native approval absent')}}),/fresh native approval absent/);
+ assert.equal(existsSync(work),false);
+ cp.materializeBoundedDeveloperCheckpoint(saved,work,{manager,workspaceLock:locks.workspace,assertAuthorized(){checked++}});
+ assert.ok(checked>=2);assert.equal(readFileSync(join(work,'file.txt'),'utf8'),'base\n');assert.equal(git(work,'rev-parse','HEAD'),before.state.baselineCommit);
+ assert.equal(git(work,'status','--porcelain','--ignored'),'');assert.deepEqual(DurableStore.load(taskRoot),before);
+ assert.equal(before.state.candidate,undefined,'This data primitive never invents a candidate or admits a Developer');
+ assert.ok(existsSync(join(moved,'.controlled-dev',saved.transcriptRelativePath)));
+});
+test('bounded checkpoint rejects changed work/transcript, missing lease and concurrent inspection edits',async t=>{
+ const f=await fixture(t),ledger=DurableStore.load(f.storeRoot),run=ledger.state.runs.at(-1),work=ledger.records.find(r=>r.id===run.assignmentId).value.workRoot;
+ const transcript=readFileSync(run.childSessionId),file=join(work,'file.txt');
+ assert.throws(()=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,{inspect:()=> 'ACCEPT'}),/LEASE_REQUIRED/);
+ writeFileSync(file,'effect\n');assert.throws(()=>f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,o)));writeFileSync(file,'base\n');
+ appendFileSync(run.childSessionId,JSON.stringify({type:'message',message:{role:'assistant',content:[{type:'toolCall',name:'write',arguments:{path:'file.txt',content:'base\n'}}]}})+'\n');
+ assert.throws(()=>f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,o)));writeFileSync(run.childSessionId,transcript);
+ assert.throws(()=>f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,{...o,inspect(){writeFileSync(file,'raced effect\n');return 'ACCEPT'}})));
+ writeFileSync(file,'base\n');assert.deepEqual(DurableStore.load(f.storeRoot),ledger);
+});
+test('sealed checkpoint rejects missing or edited evidence, aliases and modified Git baseline before restore',async t=>{
+ const f=await fixture(t),saved=f.options(o=>cp.captureBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data,o));f.orchestrator.dispose();
+ const transcript=join(f.repo,'.controlled-dev',saved.transcriptRelativePath),raw=readFileSync(transcript),alias=transcript+'.hardlink';
+ linkSync(transcript,alias);assert.throws(()=>cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data));rmSync(alias);
+ const backup=transcript+'.backup';renameSync(transcript,backup);symlinkSync(backup,transcript);assert.throws(()=>cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data));rmSync(transcript);renameSync(backup,transcript);
+ writeFileSync(transcript,'{}\n');assert.throws(()=>cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data));writeFileSync(transcript,raw);
+ const descriptor=join(f.repo,'.controlled-dev',saved.descriptorRelativePath),descriptorRaw=readFileSync(descriptor);rmSync(descriptor);assert.throws(()=>cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data));writeFileSync(descriptor,descriptorRaw);chmodSync(descriptor,0o600);
+ const manager=new LockManager(f.data,'new-native','new-runtime'),locks=manager.acquire('task',f.repo);t.after(()=>{try{manager.releaseAll(locks)}catch{}});
+ const current=cp.readBoundedDeveloperCheckpoint(f.repo,f.storeRoot,f.data);writeFileSync(join(f.repo,'file.txt'),'foreign source\n');
+ assert.throws(()=>cp.materializeBoundedDeveloperCheckpoint(current,join(f.data,'controlled-dev','workspaces','foreign'),{manager,workspaceLock:locks.workspace,assertAuthorized(){}}));
+ assert.equal(DurableStore.load(f.storeRoot).state.candidate,undefined);assert.equal(DurableStore.load(f.storeRoot).state.counters.dispatches,2);
+});
+
+test('a bounded baseline survives two project transfers and a retired READY gate, then admits exactly one freshly approved attempt',async t=>{
+ const im=await import('../src/project-runtime-import.ts'),recovery=await import('../src/recovery-resume.ts');
+ const {CentralOrchestrator,registeredRoleDispatchers,presentHumanGate}=await import('../src/orchestrator.ts');
+ const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
+ const {ControlledDeveloperRunner}=await import('../src/controlled-developer.ts');
+ const f=await fixture(t),initial=DurableStore.load(f.storeRoot),run=initial.state.runs.at(-1),assignment=initial.records.find(r=>r.id===run.assignmentId).value;
+ // The normal-close hook must preserve this baseline without an export command.
+ f.orchestrator.dispose();
+ const channel=session=>({mode:'tui',sessionManager:{getSessionId:()=>session},ui:{confirm:async()=>true}});
+ const runners=session=>{const runtime={events:{on(){return()=>{}},emit(){assert.fail('No uncontrolled provider dispatch')}},ownerSessionId:session};
+  for(const role of ['scout','developer','reviewer','oracle'])runtime[role]={name:`controlled.${role}`,runtimeGeneration:'fresh-host',active:()=>true};return registeredRoleDispatchers(runtime)};
+ async function transfer(repo,data,work,session,index){
+  const moved=join(f.root,`host-${index}-project`),newData=join(f.root,`host-${index}-private`);
+  cpSync(repo,moved,{recursive:true,preserveTimestamps:true});rmSync(repo,{recursive:true});rmSync(data,{recursive:true});rmSync(work,{recursive:true,force:true});rmSync(join(f.root,'transcripts'),{recursive:true,force:true});mkdirSync(newData);
+  for(const path of [repo,data,work,run.childSessionId])assert.equal(existsSync(path),false);
+  const task=join(resolveProjectStorage(newData,moved).projectRoot,'tasks','task'),before=DurableStore.load(task);
+  const proposal=im.prepareProjectRuntimeImport(newData,moved,'task',session,()=> 'ACCEPT');
+  assert.equal(proposal.payload.schemaVersion,2);assert.equal(proposal.payload.boundedBaseline.descriptor.stateDigest,api.hashCanonical(before.state));
+  const request=im.projectRuntimeImportRequest(proposal),receipt=await presentTrustedConfirmation(channel(session),request),cap=im.authorizeProjectRuntimeImport(proposal,receipt);
+  const o=CentralOrchestrator.restore(recovery.takeOverImportedWorkflow(cap),runners(session));im.completeProjectRuntimeImport(cap);
+  const ledger=DurableStore.load(task),reader={agentDataRoot:newData,read:r=>DurableStore.readArtifact(task,r)},proof=recovery.boundedDeveloperRecoveryData(ledger,reader);
+  assert.deepEqual(ledger.state.runs,initial.state.runs);assert.deepEqual(ledger.state.counters,initial.state.counters);assert.equal(ledger.state.candidate,undefined);
+  assert.deepEqual(ledger.events.slice(0,initial.events.length),initial.events);
+  assert.equal(proof.transcriptDigest,api.hashBytes(reader.read(proof.transcriptArtifactRef)));
+  assert.equal(proof.workRoot,proposal.payload.boundedBaseline.workRoot);
+  return {moved,newData,task,o,proof,reader,ledger,proposal};
+ }
+ const second=await transfer(f.repo,f.data,assignment.workRoot,'second-owner',2);
+ assert.equal(second.o.canOpenBeforeBoundedDeveloperRecovery(),true);
+ const gate2=second.o.openBeforeBoundedDeveloperRecovery(second.o.state.revision,'second-owner');
+ second.o.acceptHumanDecision(gate2.snapshot,await presentHumanGate(channel('second-owner'),gate2));
+ assert.equal(second.o.state.state,'READY');second.o.dispose();
+ const released=h.readProjectHandoff(second.moved);assert.equal(released.ownerDisposition,'RELEASED_FOR_TRANSFER');
+ const secondSaved=cp.readBoundedDeveloperCheckpoint(second.moved,second.task,second.newData);
+ assert.equal(secondSaved.descriptor.originalWorkRoot,assignment.workRoot,'Raw assignment roots remain historical bytes');
+ assert.equal(secondSaved.descriptor.originalTranscriptPath,run.childSessionId);
+ const third=await transfer(second.moved,second.newData,second.proof.workRoot,'third-owner',3);
+ assert.equal(third.o.state.state,'READY');assert.equal(third.o.canOpenBeforeBoundedDeveloperRecovery(),true);
+ assert.ok(third.o.state.invalidEvidenceIds.includes(gate2.snapshot.gateId));
+ await assert.rejects(()=>third.o.implement(third.o.state.revision,third.proof.workRoot),/HUMAN_GATE_REQUIRED/);
+ const gate3=third.o.openBeforeBoundedDeveloperRecovery(third.o.state.revision,'third-owner');
+ third.o.acceptHumanDecision(gate3.snapshot,await presentHumanGate(channel('third-owner'),gate3));
+ let admitted=0;t.mock.method(ControlledDeveloperRunner.prototype,'run',async()=>{admitted++;throw new Error('stop after authenticated bounded admission')});
+ await assert.rejects(()=>third.o.implement(third.o.state.revision,third.proof.workRoot),/stop after authenticated bounded admission/);
+ assert.equal(admitted,1);assert.equal(third.o.state.taskId,initial.state.taskId);assert.equal(third.o.state.counters.attempts,initial.state.counters.attempts+1);
+ assert.equal(third.o.state.counters.dispatches,initial.state.counters.dispatches+1);assert.equal(third.o.state.counters.infrastructureRetries,initial.state.counters.infrastructureRetries);
+ assert.equal(third.o.state.counters.reworkAttempts,initial.state.counters.reworkAttempts);assert.deepEqual(third.o.state.runs.slice(0,initial.state.runs.length),initial.state.runs);
+ assert.equal(readFileSync(join(third.moved,'file.txt'),'utf8'),'base\n');
+});

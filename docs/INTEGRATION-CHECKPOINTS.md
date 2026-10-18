@@ -1,0 +1,19 @@
+**English** · [Italiano](it/INTEGRATION-CHECKPOINTS.md)
+
+# Integration Checkpoints
+
+Optional project-level documents; no task states, transitions or gates are added. Definition lifecycle is projected from immutable draft artifacts and trusted native approval evidence. Run outcomes PASS/FAIL/BLOCKED are document facts. Completed runs remain immutable; partial stages preserve exact identities and evidence.
+
+The existing DurableStore project namespace `integration` owns these artifacts. The existing brief workspace mutation guard serializes this namespace's index CAS without borrowing primary write authority; an existing task lease keyed by definition revision and exact commit serializes equivalent runs. Recovery requires exact dead host incarnation, uses the existing generation-claim guard and records BLOCKED without rerunning commands. A terminal run can release its exact dead residual lease without changing its persisted outcome. An unproven command intent or Reviewer dispatch remains ineligible for an equivalent new dispatch.
+
+Coverage requires verified COMPLETED task history and a frozen Candidate Promotion binding. A changed task additionally requires an authenticated PromotionResult whose integration commit is an ancestor of the exact baseline. No-op tasks require a proven unchanged frozen candidate and completion. Explicit plan refs must match current approved revision and execution links. Existing scenarios must resolve to immutable selected-task artifacts and exact compatible command hashes.
+
+The host reuses the closed validation recipe compiler, shared process execution/evidence collector, Scenario Management and Runtime Observability. A REVIEW recipe cannot disable the existing Reviewer: it has no process command and must retain its actual review execution. Checkpoint validation evidence has a project baseline/run envelope; it is not accepted into a task workflow. Tracked worktree files, HEAD and index must remain tied to the commit. Untracked build/test outputs are allowed only in the isolated copy; dirty copies are preserved when ordinary Git cleanup refuses them.
+
+The same controlled.reviewer integration entry point retains fresh context, read-only tools, transcript/extension enforcement and exact terminal proof. The bounded packet supplies task results, authenticated promotions, definition, validation/scenario/runtime evidence and exact store refs for further read-only inspection. Its digest and the terminal tuple are persisted and checked on reload. Command proofs bind cwd to the run’s unique isolated copy, including scenarios that retain an original task ID; old-run proofs cannot be reassociated with a new run. Project Memory uses existing bounded selection and real dispatch receipts; deterministic host planning/selection is labelled HOST_CONSUMED, never provider acknowledgement.
+
+A primary canary rejects unaccounted changes. The only alternative to byte-identical primary files is a clean target advanced through an exact chain of trusted, approved, persisted PromotionResults; sensitive Git configuration/hooks remain unchanged. Physical bytes must match the approved integration digest even if Git index flags conceal worktree changes. JSON or duck-typed callbacks cannot waive this check. Arbitrary commits/ref changes or dirty primary mutations fail closed. The target is not locked throughout verification.
+
+Current integration status is derived from runs and current target identity: NOT_CHECKED, VERIFIED, FAILED, STALE. PASS remains attached to the old commit when the target advances. This view never authorizes or blocks future promotion. Completion, integration and baseline verification remain separate.
+
+No scheduler, second orchestrator, second reviewer, shell supplied by models, source instrumentation, automatic repair/rollback, remote Git or Systemist authority is introduced. Human Markdown and Obsidian notes are disposable projections.

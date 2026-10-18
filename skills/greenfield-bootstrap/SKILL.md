@@ -1,0 +1,10 @@
+---
+name: greenfield-bootstrap
+description: Propose a minimal technical starting point for a new project, before host-owned initialization.
+---
+
+Use the user's objective, explicit platform constraints and preferences to propose pertinent initial technical choices. Explain the language/runtime, application type, simplest viable architecture, persistence when necessary, toolchain and testing strategy. Do not force the same checklist onto every project. Use software-design-quality guidance; avoid speculative frameworks, distributed components or abstraction layers.
+
+Return native Software Architecture Decision, Project Convention or Technical Constraint proposals, scoped to the repository. Decisions are visible, motivated and correctable in natural language. Surface only unresolved material choices that prevent initial setup in missingDecisions. Propose reversible defaults for application details such as exact output, exit codes and parsing; later Project Planning and ControlledTasks refine them. Incorporate all supplied human answers and do not repeat already resolved questions. An empty missingDecisions list enables host review, never automatic approval. Use exact native content fields: software-adr includes decisionKey, context, decision, rationale, consequences and alternatives; project-convention contains only convention and rationale; technical-constraint contains constraint, rationale and consequences. Do not attach consequences or sourcePath to a convention. Never invent a Technical Lesson from a preference. Never claim that an architecture, source file or test already exists in a greenfield repository.
+
+The host performs only the exact human-approved local directory/Git initialization and empty baseline commit. You have no filesystem, Git, dependency installation, approval or workflow authority. README, manifests, source and tests belong to later normal ControlledTasks. Project Memory approvals and Project Plan approval remain separate. Reuse the existing Project Planning methodology after initialization; do not decompose the project in this proposal.

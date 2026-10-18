@@ -337,9 +337,9 @@ export async function createProductionTask(ctx:ProductionCommandContext,propose?
   if(!propose)throw new Error('PRE_TASK_SCOUT_UNAVAILABLE');
   const automatic=ctx.autonomy;
   if(automatic&&(!planned?.scoutResult||!isHostPreTaskProposal(planned.scoutResult)||planned.scoutResult.ambiguities.length||planned.scoutResult.risks.length))throw new Error('UNRESOLVED_RISK');
-  const investigations=ContextInvestigationRepository.open(data,repo,inspectArtifact);
+  let investigations:ContextInvestigationRepository|undefined;
   const seedBinding=planned?plannedSeedInvestigationBinding(planned.seed):undefined;
-  const investigationFor=(objective:string,humanScope:readonly string[])=>investigations.bind({kind:'pre-task',
+  const investigationFor=(objective:string,humanScope:readonly string[])=>(investigations??=ContextInvestigationRepository.open(data,repo,inspectArtifact)).bind({kind:'pre-task',
     subjectId:seedBinding?.subjectId??`request-${hashCanonical({objective})}`,scopeDigest:seedBinding?.scopeDigest??contextInvestigationScopeDigest(humanScope)});
   const proposal=automatic?proposalDraft(planned!.seed.objective,planned!.scoutResult!):await taskWizard(ctx.ui,propose,planned?{...planned.seed,compact:true}:undefined,investigationFor);if(!proposal)return;
   const {objective,scope:allowedPaths,criteria}=proposal;

@@ -19,7 +19,7 @@ The README, terminal interface, built-in prompts and generated interface labels 
 | Architecture | [Read](ARCHITECTURE.md) | [Leggi](it/ARCHITECTURE.md) |
 | Protocol | [Read](PROTOCOL.md) | [Leggi](it/PROTOCOL.md) |
 | Protocol test matrix | [Read](TEST-MATRIX.md) | [Leggi](it/TEST-MATRIX.md) |
-| Current validation and known failures | [Read](VALIDATION.md) | [Leggi](it/VALIDATION.md) |
+| Current validation and coverage limits | [Read](VALIDATION.md) | [Leggi](it/VALIDATION.md) |
 | Preserved historical evidence | [Read](HISTORICAL-EVIDENCE.md) | [Leggi](it/HISTORICAL-EVIDENCE.md) |
 | Historical P15 campaign | [Read](P15-E2E-MATRIX.md) | [Leggi](it/P15-E2E-MATRIX.md) |
 | Historical P16C WAL audit | [Read](P16C-WAL-AUDIT.md) | [Leggi](it/P16C-WAL-AUDIT.md) |

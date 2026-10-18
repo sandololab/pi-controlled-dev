@@ -19,7 +19,7 @@ README, interfaccia terminale, prompt inclusi ed etichette generate sono in ingl
 | Architettura | [Leggi](ARCHITECTURE.md) | [Read](../ARCHITECTURE.md) |
 | Protocollo | [Leggi](PROTOCOL.md) | [Read](../PROTOCOL.md) |
 | Matrice dei test del protocollo | [Leggi](TEST-MATRIX.md) | [Read](../TEST-MATRIX.md) |
-| Verifiche correnti e problemi noti | [Leggi](VALIDATION.md) | [Read](../VALIDATION.md) |
+| Verifiche correnti e limiti di copertura | [Leggi](VALIDATION.md) | [Read](../VALIDATION.md) |
 | Evidenze storiche conservate | [Leggi](HISTORICAL-EVIDENCE.md) | [Read](../HISTORICAL-EVIDENCE.md) |
 | Campagna storica P15 | [Leggi](P15-E2E-MATRIX.md) | [Read](../P15-E2E-MATRIX.md) |
 | Audit storico WAL P16C | [Leggi](P16C-WAL-AUDIT.md) | [Read](../P16C-WAL-AUDIT.md) |

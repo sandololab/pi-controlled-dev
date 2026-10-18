@@ -318,12 +318,12 @@ test('P4-015 — object payload and list limits include the whole serialized inp
 });
 
 test('P4-016 — pure implementation boundary, no operational integrations or dependencies',()=>{
-  for(const name of ['contracts','contract-json','contract-schema','contract-semantic','run-quiescence','runtime-root-binding']) {
+  for(const name of ['contracts','contract-json','contract-schema','contract-semantic','run-quiescence','runtime-root-mapping']) {
     const source=readFileSync(new URL(`../src/${name}.ts`,import.meta.url),'utf8');
     const tree=ts.createSourceFile(name,source,ts.ScriptTarget.Latest,true);
     function visit(node) {
       if(ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) {
-        assert.ok(['node:crypto','node:buffer','node:util','./contract-json.js','./contract-schema.js','./contract-semantic.js','./run-quiescence.js','./runtime-root-binding.js'].includes(node.moduleSpecifier.text));
+        assert.ok(['node:crypto','node:buffer','node:util','./contract-json.js','./contract-schema.js','./contract-semantic.js','./run-quiescence.js','./runtime-root-mapping.js'].includes(node.moduleSpecifier.text));
       }
       assert.notEqual(node.kind,ts.SyntaxKind.ImportKeyword);
       if(ts.isIdentifier(node))assert.ok(!['process','globalThis','require','eval','Function','fetch','setTimeout','setInterval','console'].includes(node.text),node.text);

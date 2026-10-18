@@ -104,7 +104,7 @@ test('Checkpoint — real approved M3 during M2 read-only Reviewer keeps M2 PASS
   bus.mutate=()=>{if(!promoted){const p=spawnSync(process.execPath,['test/candidate-promotion-worker.mjs','promotion-approve',f.data,f.repo,'none','P3'],{encoding:'utf8'});assert.equal(p.status,0,p.stdout+p.stderr);promoted=true}};
   let run;try{run=await service.run(d.checkpointId,1,service.baseline(),runner)}finally{runner.dispose();registration.dispose()}
   assert.equal(run.outcome,'PASS',run.reason);assert.equal(run.baseline.commit,f.m2);assert.notEqual(git(f.repo,'rev-parse','HEAD'),f.m2);assert.equal(service.status().status,'STALE');assert.equal(service.runs()[0].outcome,'PASS');
-  rebuildIntegrationCheckpointView(service);assert.match(readFileSync(join(service.projectRoot,'human','Project.md'),'utf8'),/earlier version/);
+  rebuildIntegrationCheckpointView(service);assert.match(readFileSync(join(service.projectRoot,'human','Project.md'),'utf8'),/earlier project version/);
   assert.equal(primaryCanary.verify(),true);const path=join(f.repo,'file.txt'),original=readFileSync(path);
   git(f.repo,'update-index','--assume-unchanged','file.txt');writeFileSync(path,'unaccounted hidden bytes\n');
   try{assert.equal(git(f.repo,'status','--porcelain'),'');assert.equal(primaryCanary.verify(),false,'Git index flags cannot conceal primary byte changes after approved promotion')}finally{writeFileSync(path,original);git(f.repo,'update-index','--no-assume-unchanged','file.txt')}

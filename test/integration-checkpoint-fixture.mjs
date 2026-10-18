@@ -10,7 +10,10 @@ const part1='exports.a = () => 2;\n',part2=part1+'exports.b = () => 3;\n';
 const configuration=({repo,spec})=>{
   if(!readFileSafe(join(repo,'package.json'))){
     writeFileSync(join(repo,'package.json'),JSON.stringify({scripts:{test:'node integration.cjs'}})+'\n');
-    writeFileSync(join(repo,'integration.cjs'),"const assert=require('node:assert/strict'),m=require('./file.txt');assert.equal(m.a(),2);if(m.b){assert.equal(m.b(),3);assert.equal(m.a()+m.b(),5)}\n");
+    // Initial fixture must pass its adopted tests before the Developer runs.
+    // Feature presence is checked by the checkpoint's exact-content criterion.
+    writeFileSync(join(repo,'file.txt'),'module.exports = {};\n');
+    writeFileSync(join(repo,'integration.cjs'),"const assert=require('node:assert/strict'),m=require('./file.txt');assert.equal(typeof m,'object');if(m.a)assert.equal(m.a(),2);if(m.b){assert.equal(m.b(),3);assert.equal(m.a()+m.b(),5)}\n");
     git(repo,'add','.');git(repo,'commit','-qm','fixture integration tests');
   }
   spec.validationCommands=[{schemaVersion:1,id:'validation-1',executable:'/usr/bin/git',argv:['diff','--check'],timeoutMs:120000,required:true},

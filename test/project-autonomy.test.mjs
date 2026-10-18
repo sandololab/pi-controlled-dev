@@ -164,6 +164,9 @@ test('PA reload preserves the deterministic run/task/revision identity and exact
 });
 test('PA valid historical task-local effect remains inspectable and recoverable without migration',async t=>{
  const f=await taskStateEffects(t),c=f.cases[0],{DurableStore}=await import('../src/store.ts');
+ // Recreate the historical pre-digest artifact identity with the same verified bytes.
+ const source=DurableStore.readArtifact(c.storeRoot,c.sourceRef);c.sourceRef={...c.sourceRef,id:'state-r11',relativeStorePath:'artifacts/state-r11'};
+ writeFileSync(join(c.storeRoot,c.sourceRef.relativeStorePath),source,{mode:0o400,flag:'wx'});
  f.autonomy.recordEffect(c.cap.ref,[c.sourceRef],{read:ref=>DurableStore.readArtifact(c.storeRoot,ref)});
  const before=f.autonomy.effects(),raw=f.autonomy.store.read(c.sourceRef);f.autonomy.pause(f.run.runId,'MANUAL_PAUSE','boundary','test recovery');
  const reload=Autonomy.open(f.data,f.repo,inspect);reload.resume(f.run.runId);reload.recordTaskStateEffect(c.cap.ref,c.sourceRef);

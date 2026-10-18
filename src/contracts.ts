@@ -1,7 +1,7 @@
 // P4 data contracts only. Validation never authenticates a host, human or run.
 import { copyJson, parseJson, canonicalize, hashCanonical, byteLength, ContractError } from './contract-json.js';
 import type { Issue } from './contract-json.js';
-import type { RuntimeRootMapping } from './runtime-root-binding.js';
+import type { RuntimeRootMapping } from './runtime-root-mapping.js';
 import { object, list, literal, enumeration, integer, scalars, scalar } from './contract-schema.js';
 import type { Infer, Schema } from './contract-schema.js';
 import { localSemantics, crossSemantics, selfHash, fingerprint } from './contract-semantic.js';

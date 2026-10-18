@@ -37,7 +37,7 @@ test('positive reuse fixture preserves an existing ScenarioRepository instead of
     ['Reuse and extend ScenarioRepository; do not introduce a second persistence path']));
   const summary=wizardSummary(draft);
   assert.match(summary,/Observed architecture:[\s\S]*ScenarioRepository/);
-  assert.match(summary,/Design expectations:[\s\S]*Reuse and extend ScenarioRepository/);
+  assert.match(summary,/Planned structure:[\s\S]*Reuse and extend ScenarioRepository/);
   assert.match(summary,/do not introduce a second persistence path/);
 });
 

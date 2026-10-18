@@ -22,7 +22,7 @@ function setup(t,options={}){
   const editors=options.editors??['Aggiungi una riga a README.md'];
   const notifications=[],confirmations=[];
   const ctx={mode:'tui',cwd:repo,sessionManager:{getSessionId:()=> 'session'},ui:{notify(m){notifications.push(m)},
-    async input(){return undefined},async editor(){return editors.shift()},async select(title,options){return options[0]},async confirm(title,message){confirmations.push([title,message]);return title==="Create the task?"||title==='Annullare la preparazione?'}}};
+    async input(){return undefined},async editor(){return editors.shift()},async select(title,options){return options[0]},async confirm(title,message){confirmations.push([title,message]);return title==="Create the task?"||title==='Cancel preparation?'}}};
   return {root,repo,data,git,ctx,notifications,confirmations};
 }
 function command(ctx){const handlers=new Map(),commands=new Map();let rpc=0,active=[];
@@ -60,9 +60,11 @@ test('P17 public new builds validated spec outside repo, preserves baseline, req
 const propose=async objective=>({schemaVersion:1,phase:'PRE_TASK_PROPOSAL',proposalOnly:true,requestId:'fixture',requestHash:'a'.repeat(64),relevantFiles:['README.md'],proposedScope:['README.md'],acceptanceCriteria:['README.md contiene la riga richiesta'],existingTests:[],validations:[{kind:'REVIEW',description:'Controlla il risultato richiesto',paths:['README.md'],expectedLines:[]}],architectureFindings:['README.md è la guida esistente'],designExpectations:['Estendere la guida esistente'],ambiguities:[],risks:[],explanation:"Proposal"});
 for(const [name,options,reason] of [
   ['no git',{noGit:true},/Invalid Git repository/],
-  ['sensitive input',{editors:['SYNTHETIC_SECRET']},/sicurezza/],
+  ['sensitive input',{editors:['SYNTHETIC_SECRET']},/cannot be exported safely/],
 ])test(`P17 new rejects ${name} without creating task data`,async t=>{
-  const f=setup(t,options);await assert.rejects(createProductionTask(f.ctx,propose),reason);assert.deepEqual(readdirSync(f.data),[]);
+  const f=setup(t,options);await assert.rejects(createProductionTask(f.ctx,propose),reason);
+  assert.throws(()=>readProductionTaskInput(f.ctx),error=>error.code==='CONTROLLED_DEV_TASK_INPUT_MISSING');
+  for(const entry of readdirSync(f.data,{recursive:true,withFileTypes:true}).filter(e=>e.isFile()))assert.doesNotMatch(readFileSync(join(entry.parentPath,entry.name),'utf8'),/SYNTHETIC_SECRET/);
 });
 test('P17 dirty repo rejected; cancellation leaves no draft; non-TUI cannot create tasks',async t=>{
   const f=setup(t);writeFileSync(join(f.repo,'README.md'),'dirty');await assert.rejects(createProductionTask(f.ctx,propose),/unsaved changes/);
@@ -122,7 +124,9 @@ test('P17 blocked unknown role status names the exact safe recovery effect',t=>{
 });
 test('P17 session replacement during prompts cannot persist a task',async t=>{
   const f=setup(t);f.ctx.ui.confirm=async title=>{if(title==="Create the task?"){f.ctx.sessionManager.getSessionId=()=> 'other';return true}return false};
-  await assert.rejects(createProductionTask(f.ctx,propose),/session changed/);assert.deepEqual(readdirSync(f.data),[]);
+  await assert.rejects(createProductionTask(f.ctx,propose),/session changed/);
+  assert.throws(()=>readProductionTaskInput(f.ctx),error=>error.code==='CONTROLLED_DEV_TASK_INPUT_MISSING');
+  assert.equal(readdirSync(f.data,{recursive:true,withFileTypes:true}).filter(entry=>entry.isFile()).some(entry=>entry.parentPath.split('/').includes('tasks')||entry.name==='task.json'),false,'Saved read-only investigation evidence must not become an executable task');
 });
 
 test('P17 blocked review reports current host checks without counting stale or invalid results',()=>{

@@ -97,7 +97,7 @@ test('real Node scenario fails, yields bounded JSONL, receives a candidate-only 
     }
     const before=read(first,'runtime-evidence-'),beforeEvents=runtime.parseRuntimeJsonl(store.read(first.artifacts.find(ref=>ref.id.startsWith('runtime-events-'))));
     assert.equal(before.complete,true);assert.equal(before.scenarioId,'check');assert.equal(before.validationId,first.result.id);
-    assert.match(before.summary,/fallita/);assert.equal(before.metrics.result,5);assert.match(JSON.stringify(beforeEvents),/intermediate/);
+    assert.match(before.summary,/The check failed/);assert.equal(before.metrics.result,5);assert.match(JSON.stringify(beforeEvents),/intermediate/);
     assert.doesNotMatch(JSON.stringify(beforeEvents),/test-secret/);
     writeFileSync(join(candidateRoot,'calc.cjs'),'exports.multiply=(a,b)=>a*b;\n');
     const secondState=state(2),second=runApprovedValidation(spec,secondState,'check',store);

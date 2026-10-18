@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 
 // Bounded in-memory loader: no generated files, arbitrary resolver or dependency installs.
-const files = new Set(['contracts', 'contract-json', 'contract-schema', 'contract-semantic','run-quiescence','runtime-root-binding']);
+const files = new Set(['contracts', 'contract-json', 'contract-schema', 'contract-semantic','run-quiescence','runtime-root-mapping']);
 const urls = new Map();
 function url(name) {
   if (!files.has(name)) throw new Error(`Unapproved P4 module: ${name}`);

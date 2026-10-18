@@ -179,7 +179,7 @@ test('public new connects native wizard to read-only pre-task Scout before freez
   assert.equal(spec.humanGates.beforeImplementation,true);assert.equal(spec.humanGates.beforeCompletion,true);
   assert.deepEqual(spec.validationCommands[0].argv,['diff','--check']);assert.equal(bus.requests.filter(r=>r.method==='spawn').length,1);
   assert.equal(bus.requests.find(r=>r.method==='spawn').params.agent,PRE_TASK_SCOUT_NAME);assert.equal(git('rev-parse','HEAD'),before);assert.equal(git('status','--porcelain'),'');
-  assert.match(messages.at(-1),/Task prepared/);for(const fn of handlers.get('session_shutdown'))fn({},ctx);
+  assert.match(messages.at(-1),/Task prepared/);for(const fn of handlers.get('session_shutdown'))await fn({},ctx);
 });
 
 for(const recovery of ['retry in panel','return and retry command'])test(`failed project planning preserves goal, reports connection error and supports ${recovery}`,async t=>{
@@ -192,7 +192,8 @@ for(const recovery of ['retry in panel','return and retry command'])test(`failed
  const hooks=new Map(),notices=[],actions=[recovery==='retry in panel'?"Retry analysis":"Back to project"];let command;
  extension({events:bus,registerCommand(_name,value){command=value},on(name,fn){const list=hooks.get(name)??[];list.push(fn);hooks.set(name,list);return()=>{}},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(){}});
  const ctx={mode:'tui',cwd:repo,sessionManager:{getSessionId:()=> 'owner'},ui:{notify:(message,type)=>notices.push({message,type}),editor:async()=>assert.fail('Goal already saved'),confirm:async()=>assert.fail('No approval requested'),select:async(title,options)=>{const action=actions.shift();assert.ok(options.includes(action),action);if(title.startsWith("Project analysis interrupted")){assert.equal(bus.requests.filter(r=>r.method==='spawn').length,1);if(action==="Retry analysis"){bus.failed=false;actions.push("Back")}}return action}}};
- for(const hook of hooks.get('session_start'))hook({},ctx);t.after(()=>{for(const hook of hooks.get('session_shutdown'))hook({},ctx)});await command.handler('project plan',ctx);
+ for(const hook of hooks.get('session_start'))await hook({},ctx);
+ try{await command.handler('project plan',ctx);
  assert.equal(bus.requests.find(r=>r.method==='spawn').params.timeoutMs,600000);
  if(recovery==='return and retry command'){
   assert.ok(notices.some(n=>n.type==='error'&&n.message.includes('fetch failed')));await command.handler('status --technical',ctx);const technical=JSON.parse(notices.at(-1).message);assert.equal(technical.lastFailure.code,'PRE_TASK_PROVIDER_CONNECTION_FAILED');assert.equal(technical.lastFailure.diagnostic.phase,'PROJECT_PLANNING');assert.equal(technical.lastFailure.diagnostic.terminationVerified,true);assert.equal(technical.lastFailure.diagnostic.sessionFile,bus.session);
@@ -200,6 +201,7 @@ for(const recovery of ['retry in panel','return and retry command'])test(`failed
   assert.equal(bus.requests.filter(r=>r.method==='spawn').length,1);bus.failed=false;actions.push("Back");await command.handler('project plan',ctx);
  }
  const reopened=ProjectPlanningRepository.open(data,repo,()=> 'ACCEPT');assert.equal(reopened.goals().length,1);assert.equal(reopened.goals()[0].contentDigest,goal.contentDigest);assert.equal(reopened.history().length,1,JSON.stringify({notices,methods:bus.requests.map(r=>r.method)}));assert.equal(reopened.history()[0].status,'DRAFT');assert.equal(reopened.current(),undefined);assert.equal(bus.requests.filter(r=>r.method==='spawn').length,2);assert.equal(git('rev-parse','HEAD'),before);assert.equal(git('status','--porcelain'),'');assert.equal(actions.length,0);
+ }finally{for(const hook of hooks.get('session_shutdown'))await hook({},ctx)}
 });
 
  test('real Scout prose scope is rejected; observed names and simple new paths remain supported',t=>{

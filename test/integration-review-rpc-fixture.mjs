@@ -14,7 +14,7 @@ export class Bus{
     if(q.method==='ping')value={version:1,methods:['ping','spawn','status','interrupt','stop','resume'],session:{sessionId:'owner',sessionFile:null},events:{asyncComplete:'subagent:async-complete'},capabilities:{asyncSpawn:true,status:true,interrupt:true,stop:true,resume:true,processTerminalProof:{version:1,lifecycleArtifactVersion:3}}};
     else if(q.method==='spawn'){
       this.task=q.params.task;assert.equal(q.params.agent,'controlled.reviewer');assert.equal(q.params.cwd,this.work??q.params.cwd);assert.equal(q.params.context,'fresh');
-      this.work??=q.params.cwd;const packet=JSON.parse(q.params.task.split('PACKET=')[1].split('\nPROJECT MEMORY')[0]),packetDigest=api.hashCanonical(packet);this.packet=packet;
+      this.work??=q.params.cwd;const packet=JSON.parse(q.params.task.split('PACKET=')[1].split('\n')[0]),packetDigest=api.hashCanonical(packet);this.packet=packet;
       this.output={packetDigest,verdict:this.mode==='FAIL'?'FAIL':'PASS',reason:'Declared provider review double',criteria:packet.criteria.map(c=>({criterionId:c.id,status:this.mode==='FAIL'?'FAIL':'PASS',reason:'Observed fixture criterion'}))};
       if(this.mode==='WRONG_BINDING')this.output.packetDigest='0'.repeat(64);
       if(this.mode==='MISSING_CRITERION')this.output.criteria=[];

@@ -189,7 +189,10 @@ export class ProjectAutonomyRepository {
   if(!['beforeImplementation','onScopeChange','beforeCompletion','beforeReviewerRedispatch'].includes(authorization.actionKind)
     ||!validateScalar('ID',subject.plannedTaskId).ok||!validateStructure('TaskSpec',spec).ok||hashContract('TaskSpec',spec)!==spec.specHash)fail('AUTONOMY_ARTIFACT_INVALID');
   // Select the source namespace from the verified authorization, never from a caller-supplied path.
-  const raw=DurableStore.readArtifact(join(this.store.root,'..','tasks',spec.taskId),sourceRef),state=parseJson(raw,2*1024*1024) as any;
+  let raw:Uint8Array;
+  try{raw=DurableStore.readArtifact(join(this.store.root,'..','tasks',spec.taskId),sourceRef)}
+  catch(error){if((error as {code?:string}).code==='ENOENT')fail('STORE_ARTIFACT_INTEGRITY');throw error}
+  const state=parseJson(raw,2*1024*1024) as any;
   if(!validateStructure('WorkflowState',state).ok||state.taskId!==spec.taskId||state.repoRoot!==this.repoRoot
     ||![spec.specHash,subject.proposedSpecHash].includes(state.specHash)
     ||![`state-r${state.revision}`,`state-r${state.revision}-${hashBytes(raw)}`].includes(sourceRef.id))fail('AUTONOMY_ARTIFACT_INVALID');

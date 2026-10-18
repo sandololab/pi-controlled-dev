@@ -133,10 +133,10 @@ test('Promotion — planning waits for integration, then exposes normal TaskSpec
     withLockMutation(manager.root,manager.workspaceIdentity(repo).workspaceHash,()=>planning.linkPreparedTask(seed,spec,manager,true));
   }});
   assert.equal(planning.progress()[0].status,'COMPLETED');assert.equal(planning.progress()[0].baselineReady,false);assert.equal(planning.progress()[1].status,'WAITING');assert.throws(()=>planning.prepareStart(plan.planId,plan.revision,'p2'),/PROJECT_TASK_NOT_READY/);
-  rebuildProjectPlanningView(planning);let project=readFileSync(join(planning.projectRoot,'human','Project.md'),'utf8');assert.match(project,/awaiting integration|awaiting project integration/);
+  rebuildProjectPlanningView(planning);let project=readFileSync(join(planning.projectRoot,'human','Project.md'),'utf8');assert.match(project,/ready to integrate into the project with your authorization/);
   await lease(f,async repo=>{const p=await repo.prepare('task'),{q,r}=await confirm(repo,p);repo.applyDecision(q,r)});
   assert.equal(planning.progress()[1].status,'READY');const seed=planning.prepareStart(plan.planId,plan.revision,'p2');assert.equal(seed.objective,'Usare il risultato del primo incremento');assert.equal('specHash' in seed,false);assert.equal(planning.links().length,1);
-  rebuildHumanView(f.storeRoot);rebuildProjectPlanningView(planning);project=readFileSync(join(planning.projectRoot,'human','Project.md'),'utf8');assert.match(project,/present in the target branch history/);const current=readFileSync(join(planning.projectRoot,'human','Planning','Current Plan.md'),'utf8');assert.match(current,/Secondo: READY/);clean(f);
+  rebuildHumanView(f.storeRoot);rebuildProjectPlanningView(planning);project=readFileSync(join(planning.projectRoot,'human','Project.md'),'utf8');assert.match(project,/present in the target branch history/);const current=readFileSync(join(planning.projectRoot,'human','Planning','Current Plan.md'),'utf8');assert.match(current,/\[Secondo\].* — not started/);clean(f);
 });
 
 test('Promotion — separate-process crash/reload recovers only the exact durable intent',async t=>{

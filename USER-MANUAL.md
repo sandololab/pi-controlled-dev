@@ -567,6 +567,8 @@ Transfer the complete project, including `.git`, `.controlled-dev` and `Document
 
 For unfinished transferred work, or work saved/released by normal closure even in the same folder, choose **Resume transferred project** or `/controlled-dev project resume-storage`. Without a task ID it lists verifiable saved tasks; an ID may also be supplied.
 
+When a Developer stops without changing files, closing Pi also preserves the verified starting copy. After a transfer the package recreates that copy and asks for a fresh confirmation. This applies to repeated transfers and tasks saved as READY. Previously used attempts remain counted, and original evidence retains its exact bytes and historical paths.
+
 Fresh confirmation presents previous/current locations, preserved work and personal-note changes. It authorizes local restoration/control; old confirmations do not authorize the new execution. Required checks and decisions are reacquired. Unverifiable storage or uncertain old-agent termination leaves dependent work stopped.
 
 Storage adoption has historical real-Pi evidence. Reading after relocation with an empty profile is tested. Full real-model resumption on a second computer still needs dedicated verification.

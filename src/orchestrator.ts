@@ -1,4 +1,5 @@
 import { captureCandidateCheckpoint } from './candidate-checkpoints.js';
+import { captureBoundedDeveloperCheckpoint } from './bounded-developer-checkpoint.js';
 import { captureDeveloperBaseline, createReviewerBaselineContext } from './developer-baseline.js';
 import type { DeveloperBaselineEvidence } from './developer-baseline.js';
 import { sealProjectHandoff, releaseProjectHandoff, currentProjectHandoffCandidatePaths } from './project-handoff.js';
@@ -658,6 +659,11 @@ export class CentralOrchestrator {
       const saved=captureCandidateCheckpoint(this.#state.repoRoot,this.#store.root,this.#store.agentDataRoot,
         {manager:this.#lockManager,workspaceLock:this.#locks.workspace});
       descriptors.push(`candidates/${this.spec.taskId}/checkpoints/${saved.descriptorDigest}.json`);
+    }else if(['BLOCKED','AWAITING_HUMAN','READY'].includes(this.#state.state)&&this.#state.blockedReason==='Developer reported a bounded blocker'){
+      // Persist the verified no-effects baseline before sealing/releasing custody.
+      // The checkpoint preserves evidence; import still requires fresh approval.
+      captureBoundedDeveloperCheckpoint(this.#state.repoRoot,this.#store.root,this.#store.agentDataRoot,
+        {manager:this.#lockManager,workspaceLock:this.#locks.workspace,inspect:this.#store.artifactInspection});
     }
     const assertQuiescent=()=>{
       this.#requireQuiescent();
@@ -919,9 +925,14 @@ export class CentralOrchestrator {
     if(canonicalize(ledger.state)!==canonicalize(this.#state))throw new HumanDecisionStaleError('PERSISTED_STATE_CHANGED');
     return developerRecoveryData(ledger,this.#store);
   }
+  #boundedDeveloperRecoveryId(assignmentId:string):string{
+    return this.#state.runtimeBindingRef
+      ?`bounded-developer-recovery-${hashCanonical({assignmentId,runtimeBindingId:this.#state.runtimeBindingRef.id})}`
+      :`bounded-developer-recovery-${assignmentId}`;
+  }
   #boundedDeveloperRecoveryRef(){
     const run=this.#state.runs.at(-1);
-    return run?.role==='Developer'&&run.resultRef?this.#records.get(`bounded-developer-recovery-${run.assignmentId}`):undefined;
+    return run?.role==='Developer'&&run.resultRef?this.#records.get(this.#boundedDeveloperRecoveryId(run.assignmentId)):undefined;
   }
   #boundedDeveloperRecoveryData(){
     if(!this.#store||!this.#lockManager.verifyTaskLock(this.#locks.task)||!this.#lockManager.verifyWorkspaceLock(this.#locks.workspace))throw new OrchestratorError('ORCHESTRATOR_BLOCKED');
@@ -934,7 +945,8 @@ export class CentralOrchestrator {
     }return data;
   }
   canOpenBeforeBoundedDeveloperRecovery():boolean{
-    if(this.#state.state!=='BLOCKED'||this.#state.pendingGateId)return false;
+    const importedReady=this.#state.state==='READY'&&!!this.#state.runtimeBindingRef&&!this.#writerApproval;
+    if((this.#state.state!=='BLOCKED'&&!importedReady)||this.#state.pendingGateId)return false;
     try{this.#boundedDeveloperRecoveryData();return true}catch{return false}
   }
   openBeforeBoundedDeveloperRecovery(expectedRevision:number,sessionId:string):HumanGateRequest{
@@ -942,7 +954,7 @@ export class CentralOrchestrator {
     if(this.#policyGateMode||sessionId!==this.#ownerSessionId||!this.canOpenBeforeBoundedDeveloperRecovery())throw new OrchestratorError('ORCHESTRATOR_BLOCKED');
     this.#requireDispatch('developer');
     if(!this.#boundedDeveloperRecoveryRef()){
-      const data=this.#boundedDeveloperRecoveryData(),ref=this.#store!.put(`bounded-developer-recovery-${data.assignmentId}`,canonicalize(data));
+      const data=this.#boundedDeveloperRecoveryData(),ref=this.#store!.put(this.#boundedDeveloperRecoveryId(data.assignmentId),canonicalize(data));
       this.#addRecord(ref.id,'ArtifactRef',ref);
       this.#record('RECONCILED',this.#state.revision,'Unchanged copies and accepted bounded Developer result verified; fresh human authorization required',state=>state,[ref.id]);
     }
@@ -1003,6 +1015,7 @@ export class CentralOrchestrator {
   }
   openBeforeImplementation(expectedRevision:number,sessionId:string):HumanGateRequest{
     this.#cas(expectedRevision);this.#requireQuiescent();
+    if(this.#state.state==='READY'&&this.canOpenBeforeBoundedDeveloperRecovery())return this.openBeforeBoundedDeveloperRecovery(expectedRevision,sessionId);
     if(!this.requiresLocalWriterConfirmation||!['READY','REWORK'].includes(this.#state.state))throw new OrchestratorError('HUMAN_GATE_REQUIRED');
     this.#requireDispatch('developer');
     if(this.#state.state==='REWORK'){

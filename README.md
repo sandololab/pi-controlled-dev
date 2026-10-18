@@ -4,7 +4,7 @@
 
 Describe the software result you want. Review the proposed plan, choose supervised execution or approve bounded autonomy, and follow each task through implementation, verification and integration.
 
-**Development beta:** the automated suite has known failures. Read the [validation status](docs/VALIDATION.md) before using this revision. Historical successful runs do not certify every current feature or platform.
+**Development beta:** the portable checks have been verified through a complete run and final targeted reruns. Read the [validation status](docs/VALIDATION.md) for coverage, optional checks and remaining limits. Historical successful runs do not certify every current feature or platform.
 
 The interface and agent guidance are in English. Documentation is available in [English](docs/README.md) and [Italiano](docs/it/README.md). See the complete [user manual](USER-MANUAL.md) / [manuale italiano](docs/it/USER-MANUAL.md).
 

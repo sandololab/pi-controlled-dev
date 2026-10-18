@@ -2,34 +2,14 @@ import { Buffer } from 'node:buffer';
 import { canonicalize, hashBytes, hashCanonical, parseJson } from './contract-json.js';
 import type { ArtifactRef, ContextRecord, TransitionEvent, WorkflowState } from './contracts.js';
 import type { BoundedDeveloperCheckpointDescriptor } from './bounded-developer-checkpoint.js';
+import { recordVerifiedRuntimeRootMapping, runtimeRootMappingFor, runtimeRootMatches } from './runtime-root-mapping.js';
+import type { RuntimeRootBindingPayload, RuntimeRootBinding, RuntimeRootMapping } from './runtime-root-mapping.js';
+export { runtimeRootMappingFor, runtimeRootMatches } from './runtime-root-mapping.js';
+export type { RuntimeRootBindingPayload, RuntimeRootBinding, RuntimeRootMapping, RuntimeBoundedBaseline } from './runtime-root-mapping.js';
 import { verifyTerminalProof } from './pi-subagents-rpc.js';
 import { verifyTranscriptBytes } from './controlled-agent-runtime.js';
 
 export const RUNTIME_ROOT_BINDING_MEDIA='application/vnd.pi-controlled-dev.runtime-root-binding+json';
-interface RuntimeRootBindingPayloadBase {
- readonly projectId:string;readonly taskId:string;readonly specHash:string;
- readonly sourceRevision:number;readonly sourceEventHash:string;readonly sourceStateDigest:string;
- readonly projectOriginalRepoRoot:string;readonly historicalRepoRoot:string;readonly previousRepoRoot:string;readonly repoRoot:string;
- readonly previousCandidateRoot:string|null;readonly candidateRoot:string|null;
- readonly candidateDigest:string|null;readonly candidateGeneration:number|null;
- readonly sourceHead:string;readonly sourceTree:string;readonly sourceInventoryDigest:string;readonly humanDigest:string;readonly handoffDigest:string;
- readonly resumeState:WorkflowState['state'];
-}
-export interface RuntimeBoundedBaseline {
- readonly descriptor:BoundedDeveloperCheckpointDescriptor;readonly descriptorRelativePath:string;
- readonly transcriptRelativePath:string;readonly workRoot:string;
-}
-export type RuntimeRootBindingPayload=RuntimeRootBindingPayloadBase & (
- {readonly schemaVersion:1;readonly boundedBaseline?:never} |
- {readonly schemaVersion:2;readonly boundedBaseline:RuntimeBoundedBaseline}
-);
-export interface RuntimeRootBinding {
- readonly schemaVersion:1;readonly id:string;readonly payload:RuntimeRootBindingPayload;
- readonly confirmationRef:ArtifactRef;readonly handoffRef:ArtifactRef;
- readonly boundedBaselineRef?:ArtifactRef;readonly boundedTranscriptRef?:ArtifactRef;
-}
-export interface RuntimeRootMapping {readonly refId:string;readonly payload:RuntimeRootBindingPayload}
-const mappings=new WeakSet<object>();
 function fail():never{throw new Error('PROJECT_RUNTIME_BINDING_INVALID')}
 function closed(v:unknown,keys:readonly string[]):asserts v is Record<string,unknown>{
  if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).sort().join(',')!==[...keys].sort().join(','))fail();
@@ -111,7 +91,7 @@ export function verifiedRuntimeRootMappings(records:readonly ContextRecord[],eve
     ||!same(next.value.spec,previous.value.spec)||next.value.baselineCommit!==previous.value.baselineCommit
     ||!same(next.value.candidate??null,prior?{...prior,root:p.candidateRoot}:null)
     ||[...previous.value.gates,...previous.value.validations,...previous.value.reviews].some(id=>!next.value.invalidEvidenceIds.includes(id)))fail();
-  const mapping=Object.freeze({refId:record.id,payload:immutablePayload(p)});mappings.add(mapping);result.push(mapping);
+  result.push(recordVerifiedRuntimeRootMapping(record.id,p));
  }
  return Object.freeze(result);
 }
@@ -130,16 +110,6 @@ export function runtimeRebindResumeState(state:WorkflowState,records:readonly Co
  if(['COMPLETED','FAILED'].includes(state.state))fail();
  return state.state;
 }
-export function runtimeRootMappingFor(state:WorkflowState,available:readonly RuntimeRootMapping[]|undefined):RuntimeRootMapping|undefined{
- if(!state.runtimeBindingRef)return undefined;
- const m=available?.find(m=>mappings.has(m)&&m.refId===state.runtimeBindingRef?.id&&m.payload.taskId===state.taskId&&m.payload.specHash===state.specHash&&m.payload.repoRoot===state.repoRoot);
- if(!m)fail();return m;
-}
-export function runtimeRootMatches(historical:string,physical:string,state:WorkflowState|undefined,available:readonly RuntimeRootMapping[]|undefined):boolean{
- if(historical===physical)return true;if(!state)return false;
- try{const m=runtimeRootMappingFor(state,available);return !!m&&m.payload.historicalRepoRoot===historical&&m.payload.repoRoot===physical}catch{return false}
-}
-
 /** Descriptor data remain historical evidence, never a reused writer permission. */
 function checkBoundedDescriptor(input:unknown):BoundedDeveloperCheckpointDescriptor{
  closed(input,['schemaVersion','kind','projectId','taskId','specHash','stateRevision','stateDigest','eventHash','assignmentId','assignmentHash','resultRef','terminalProofRef','originalRepoRoot','originalWorkRoot','originalTranscriptPath','baselineCommit','baselineTree','manifestDigest','manifestBytes','transcriptDigest','transcriptBytes','previousApprovalId','previousApprovalHash','sourceCanaryDigest']);
@@ -157,11 +127,6 @@ function checkBoundedDescriptor(input:unknown):BoundedDeveloperCheckpointDescrip
   if(ref.schemaVersion!==1||typeof ref.id!=='string'||!/^[-a-zA-Z0-9_.:]{1,128}$/.test(ref.id)||ref.relativeStorePath!==`artifacts/${ref.id}`
    ||!hash(ref.digest)||!Number.isSafeInteger(ref.bytes)||ref.bytes<0||typeof ref.mediaType!=='string'||!ref.mediaType)fail();
  }return d;
-}
-function immutablePayload(p:RuntimeRootBindingPayload):RuntimeRootBindingPayload{
- const copy=JSON.parse(canonicalize(p));
- const freeze=(v:any):any=>{if(v&&typeof v==='object'){for(const child of Object.values(v))freeze(child);Object.freeze(v)}return v};
- return freeze(copy);
 }
 function verifyBoundedBaseline(b:RuntimeRootBinding,p:RuntimeRootBindingPayload & {schemaVersion:2},seal:any,previous:WorkflowState,records:readonly ContextRecord[],events:readonly TransitionEvent[],reader:{read(ref:ArtifactRef):Uint8Array},priorMappings:readonly RuntimeRootMapping[]):void{
  const baseline=p.boundedBaseline,d=baseline.descriptor,descriptorRef=b.boundedBaselineRef!,transcriptRef=b.boundedTranscriptRef!;

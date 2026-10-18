@@ -366,8 +366,10 @@ for(const retry of [false,true])test(`PP delta limit rejection offers an explici
  const run=()=>showProjectPlanning(ctx,f.planning,scout,undefined,'refine',async()=>assert.fail('No writer authority'));
  if(retry)await run();else await assert.rejects(run,error);
  assert.equal(decisions,1);assert.equal(dispatches,retry?2:1);assert.equal(f.planning.current().contentDigest,previous.contentDigest);assert.equal(f.planning.links().length,0);assert.equal(f.planning.history().length,retry?2:1);
- const uncertain={...ctx,ui:{...ctx.ui,select:async(title,choices)=>{if(title.startsWith("Which task do you want to split?"))return choices[1];assert.fail('No retry offered while termination is uncertain')}}};
- await assert.rejects(()=>showProjectPlanning(uncertain,f.planning,{async plan(){throw new PreTaskProposalError('PROJECT_REFINEMENT_LIMIT',{...error.diagnostic,terminationVerified:false})}},undefined,'refine',async()=>assert.fail('No writer authority')),/PROJECT_REFINEMENT_LIMIT/);
+ // The uncertain-exit case is independent of the exhausted investigation above.
+ const fresh=fixture(t);await approved(fresh.planning);
+ const uncertain={...ctx,cwd:fresh.repo,ui:{...ctx.ui,select:async(title,choices)=>{if(title.startsWith("Which task do you want to split?"))return choices[1];assert.fail('No retry offered while termination is uncertain')}}};
+ await assert.rejects(()=>showProjectPlanning(uncertain,fresh.planning,{async plan(){throw new PreTaskProposalError('PROJECT_REFINEMENT_LIMIT',{...error.diagnostic,terminationVerified:false})}},undefined,'refine',async()=>assert.fail('No writer authority')),/PROJECT_REFINEMENT_LIMIT/);
 });
 test('PP delta proportional budget accepts a small overrun for three tasks and enforces each exact UTF-8 boundary',async t=>{
  const f=fixture(t),p=medium();p.plannedTasks[0].acceptanceIntent=['Outcome one','Outcome two','Outcome three','Outcome four'];
@@ -395,7 +397,7 @@ test('PP delta residual horizon retains coverage but cannot create a TaskSpec th
  // model claim can turn a planning horizon into a writer assignment.
  const allResidual={strategy:'Preservare il lavoro ampio per il prossimo affinamento',plannedTasks:[{...task('remaining','Lavoro residuo'),requiresRefinement:true}]};
  const pending=draft(f.planning,allResidual);await f.planning.approve(ui(),pending.revision);
- assert.equal(f.planning.progress()[0].status,'READY');assert.match(f.planning.progress()[0].explanation,/Split the work/);
+ assert.equal(f.planning.progress()[0].status,'READY');assert.match(f.planning.progress()[0].explanation,/Break down the work/);
  assert.throws(()=>f.planning.prepareStart(pending.planId,pending.revision,'remaining'),/PROJECT_TASK_REFINEMENT_REQUIRED/);
  assert.equal(f.planning.links().length,0);assert.equal(existsSync(join(f.planning.projectRoot,'tasks')),false);
  let prompts=0,started=0;const ctx={...ui(),cwd:f.repo};ctx.ui.editor=async()=>assert.fail('No new input');ctx.ui.select=async(title)=>{prompts++;assert.match(title,/The next work must be split/);return "Back"};

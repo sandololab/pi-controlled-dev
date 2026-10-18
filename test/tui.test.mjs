@@ -126,9 +126,12 @@ test('closing an editor retains the previous answer and rejecting cancel retains
   assert.equal((await taskWizard(view,async()=>proposal())).objective,"Objective");
 });
 test('cancel in-flight Scout signals abort and discards even a successful late result',async()=>{
-  const view=ui(["Next"],["Objective"]);let signal;
-  view.custom=async factory=>new Promise(resolve=>{const component=factory({requestRender(){}},null,null,resolve);component.handleInput(component.render(100).join(' ').includes('L’agente sta leggendo i file')?'\x1b':'\r')});
-  const draft=await taskWizard(view,async(_objective,_hints,s)=>{signal=s;await new Promise(resolve=>setTimeout(resolve,5));return proposal()});
+  const view=ui(["Next"],["Objective"]);let signal,started;
+  const dispatched=new Promise(resolve=>started=resolve);
+  view.custom=async factory=>new Promise(resolve=>{const component=factory({requestRender(){}},null,null,resolve);
+    if(component.render(100).join(' ').includes('Reading files'))dispatched.then(()=>component.handleInput('\x1b'));
+    else component.handleInput('\r');});
+  const draft=await taskWizard(view,async(_objective,_hints,s)=>{signal=s;started();await new Promise(resolve=>setTimeout(resolve,5));return proposal()});
   assert.equal(signal.aborted,true);assert.equal(draft,undefined);
 });
 test('validation recipes keep natural language out of code and exact content fails on mismatch or symlink',t=>{
@@ -185,10 +188,11 @@ test('status explains host fields in English while preserving objectives, paths,
 });
 test('status on a tall desktop uses the available space and still scrolls long history',async()=>{
  await showStatus({custom:factory=>new Promise(resolve=>{
-  const c=factory({requestRender(){},terminal:{rows:44}},null,null,resolve);
-  const lines=c.render(130);assert.ok(lines.filter(line=>line.includes('Passo registrato')).length>=24);assert.ok(lines.length<=42);
+  const tui={requestRender(){},terminal:{rows:24}},c=factory(tui,null,null,resolve);
+  const shortCount=c.render(130).filter(line=>line.includes('Recorded step')).length;tui.terminal.rows=44;
+  const lines=c.render(130);assert.equal(lines.filter(line=>line.includes('Recorded step')).length,shortCount+20);assert.ok(lines.length<=36,'Reserve eight rows for native Pi controls');
   c.handleInput('\x1b[6~');assert.match(c.render(130).join('\n'),/Lines 11-/);c.handleInput('\x1b');
- })},()=>({overview:Array.from({length:80},(_,i)=>`Passo registrato ${i}`).join('\n'),activity:'',checks:'',technical:'{}'}));
+ })},()=>({overview:Array.from({length:80},(_,i)=>`Recorded step ${i}`).join('\n'),activity:'',checks:'',technical:'{}'}));
 });
 test('confirmation content is never rewritten by status terminology presentation',async()=>{
  const body='Stato del task\nStato: Task bloccato\nCopia candidata: /__example__/candidate\nPASS\nScout · Analisi del task avviata';
@@ -538,7 +542,7 @@ test('checkpoint TUI proposal, native approval, explicit run and revision keep t
     const f=await integratedFixture({planning:true});
     const {showIntegrationCheckpoints}=await import('../src/integration-checkpoint-ui.ts');let approvalCalls=0,panels=[],confirmations=[];
     const ctx={...channel(),ui:{notify(){},editor:async()=> 'Verificare insieme i componenti attraverso la suite integrata.',confirm:async(title,body)=>{approvalCalls++;confirmations.push(body);return true;},select:async(title,choices)=>{panels.push(title);const next=queue.shift();const answer=typeof next==='function'?next(choices):next;assert.ok(choices.includes(answer),JSON.stringify({choices,answer}));return answer;}}};
-    let queue=["Propose a verification",choices=>choices.find(c=>c.startsWith('+ ')&&c.endsWith('modifica 1')),choices=>choices.find(c=>c.startsWith('+ ')&&c.endsWith('modifica 2')),"Continue","Include","Include","Technical details","Back to summary","Continue","Approve proposal"];
+    let queue=["Propose a verification",choices=>choices.find(c=>c.startsWith('+ ')&&c.endsWith('change 1')),choices=>choices.find(c=>c.startsWith('+ ')&&c.endsWith('change 2')),"Continue","Include","Include","Technical details","Back to summary","Continue","Approve proposal"];
     await showIntegrationCheckpoints(ctx,f.checkpoints,checkpointReviewer());assert.equal(queue.length,0);assert.equal(approvalCalls,1);
     const created=f.checkpoints.definitions().at(-1);assert.equal(created.status,'APPROVED');assert.deepEqual(created.controlledTaskRefs,['P1','P2']);assert.equal(f.checkpoints.runs().length,0);
     const overview=panels.find(p=>p.includes('Why this verification'));assert.match(overview,/Introdurre A/);assert.match(overview,/Collegare B/);assert.ok(!overview.includes(f.m2));
@@ -551,7 +555,7 @@ test('checkpoint TUI proposal, native approval, explicit run and revision keep t
     const versions=f.checkpoints.definitions().filter(d=>d.checkpointId===created.checkpointId);assert.deepEqual(versions.map(d=>d.status),['SUPERSEDED','APPROVED']);assert.equal(versions[0].contentDigest,created.contentDigest);
     queue=["Run an approved verification",choices=>choices.find(c=>c.includes(created.title)),"Continue","Cancel"];
     await showIntegrationCheckpoints(ctx,f.checkpoints,checkpointReviewer());assert.equal(queue.length,0);assert.equal(f.checkpoints.runs().length,1);assert.equal(approvalCalls,2);
-    assert.ok(panels.some(p=>p.includes('You are authorizing the verification')));assert.ok(panels.some(p=>p.includes('La versione verificata ha superato tutti i controlli previsti')));
+    assert.ok(panels.some(p=>p.includes('You are authorizing the verification')));assert.ok(panels.some(p=>p.includes('The verified version passed every check specified by this integration verification.')));
     await assert.rejects(showIntegrationCheckpoints({...ctx,mode:'rpc'},f.checkpoints),/HUMAN_CHANNEL_UNAVAILABLE/);
   });
 const checkpointUI=await import('../src/integration-checkpoint-ui.ts');

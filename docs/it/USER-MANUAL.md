@@ -896,6 +896,8 @@ Per conservare o trasferire un progetto spostato, copia l'intera cartella, inclu
 
 Per riprendere un’attività ancora da completare nella cartella trasferita, o dopo una chiusura regolare che ha salvato e rilasciato il progetto anche nella stessa cartella, scegli **Resume transferred project** nel menu oppure usa `/controlled-dev project resume-storage`. Senza indicare un’attività, il package propone quelle il cui lavoro salvato può essere verificato. Puoi anche aggiungere l’identificativo dell’attività al comando.
 
+Se il Developer si ferma senza modifiche, la chiusura di Pi conserva anche la copia iniziale verificata. Dopo il trasferimento il package ricrea quella copia e chiede una nuova conferma. Questo vale anche per trasferimenti ripetuti e task salvati come READY. I tentativi già usati restano conteggiati; le evidenze originali mantengono byte e percorsi storici.
+
 La nuova conferma presenta la posizione precedente e quella attuale, il lavoro conservato e le eventuali modifiche alle annotazioni personali. Autorizza il ripristino e il controllo locale di quel lavoro: le conferme precedenti non autorizzano la nuova esecuzione. Il package riesegue le verifiche richieste e chiede le nuove autorizzazioni previste. Se il salvataggio non è verificabile o la fine di un vecchio agente resta incerta, il passaggio dipendente rimane fermo.
 
 Lo spostamento della raccolta e degli archivi è stato verificato anche in Pi su un progetto reale. La lettura dopo la copia in un nuovo percorso e con un profilo vuoto è coperta da test. La ripresa completa con modello reale su un altro computer richiede ancora una prova dedicata: non è una garanzia fornita da questo manuale.

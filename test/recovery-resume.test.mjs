@@ -491,7 +491,7 @@ test('P16B.3 production commands in successor process dispatch fresh physical wo
         r.value.candidateDigest===after.candidate.digest&&!after.invalidEvidenceIds.includes(r.id)).map(r=>r.id);
       assert.deepEqual(transcript.currentValidationIds,current);for(const id of current)assert.ok(transcript.evidenceIds.includes(id))}
   }
-  assert.ok(report.notifications.some(v=>v.includes('Il task è stato interrotto')));assert.ok(report.notifications.some(v=>v.includes('COMPLETED')));
+  assert.ok(report.notifications.some(v=>v.includes('The task was interrupted')));assert.ok(report.notifications.some(v=>v.includes('Completed')));
 });
 test('P16B.3 real successor command process records UNKNOWN; third process reload does not query or dispatch',t=>{
   const f=dead(t,'BLOCKED',false,'UNKNOWN'),before=load(f).state;

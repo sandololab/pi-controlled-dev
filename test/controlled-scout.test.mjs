@@ -217,10 +217,11 @@ for(const [label,text,blocking] of [
   const risk={schemaVersion:1,id:'condition',text,criterionIds:['criterion'],blocking};
   // Keep a future condition alongside real blockers to verify it cannot dilute them.
   const risks=blocking?[risk,{...risk,id:'later',text:'Completion requires Reviewer PASS.',blocking:false}]:[risk];
-  const {orchestrator:o}=await restartFixture(root,'READY',false,false,{risks});
+  const {orchestrator:o}=await restartFixture(root,blocking?'ANALYZING':'READY',false,false,{risks});
   if(blocking){
-    assert.throws(()=>o.openBeforeImplementation(o.state.revision,'owner'),error=>error.code==='ADVISORY_REQUIRED');
-    assert.equal(o.state.state,'READY');assert.equal(o.pendingHumanGate,undefined);
+    assert.throws(()=>o.ready(o.state.revision),error=>error.code==='ADVISORY_REQUIRED');
+    assert.equal(o.state.state,'ANALYZING');assert.equal(o.pendingHumanGate,undefined);
+    assert.throws(()=>o.openBeforeImplementation(o.state.revision,'owner'),error=>error.code==='HUMAN_GATE_REQUIRED');
   }else{
     const gate=o.openBeforeImplementation(o.state.revision,'owner');
     assert.equal(o.state.state,'AWAITING_HUMAN');assert.equal(o.humanGateStatus().status,'PENDING');

@@ -1,5 +1,5 @@
 import { runQuiescent } from './run-quiescence.js';
-import { runtimeRootMatches, runtimeRootMappingFor } from './runtime-root-binding.js';
+import { runtimeRootMatches, runtimeRootMappingFor } from './runtime-root-mapping.js';
 import { Buffer } from 'node:buffer';
 import { canonicalize, hashCanonical, hashBytes, byteLength } from './contract-json.js';
 import type { Issue } from './contract-json.js';

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -38,7 +38,13 @@ test('P11 TEST-008 — traversal, absolute, backslash, fixed denies and case/Uni
 
 test('P11 TEST-009/033 — symlink mutation, parent substitution, hardlinks and strong-confinement claims are rejected',()=>{
   {const ws=workspace(),guard=ScopeGuard.open(scope(ws,['allow.txt']),ws.work,ws.base);rmSync(join(ws.work,'allow.txt'));symlinkSync('/etc/passwd',join(ws.work,'allow.txt'));rejects(()=>guard.capture(1,'terminal'),'SCOPE_VIOLATION');close(ws)}
-  {const ws=workspace({'dir/file.txt':'x'}),guard=ScopeGuard.open(scope(ws,['dir/file.txt']),ws.work,ws.base);rmSync(join(ws.work,'dir'),{recursive:true});mkdirSync(join(ws.work,'dir'));writeFileSync(join(ws.work,'dir/file.txt'),'y');rejects(()=>guard.capture(1,'terminal'),'SCOPE_ALIAS_UNVERIFIABLE');close(ws)}
+  {const ws=workspace({'dir/file.txt':'x'}),guard=ScopeGuard.open(scope(ws,['dir/file.txt']),ws.work,ws.base);
+    try{
+      // Keep the old directory allocated: unlink/recreate may reuse its inode.
+      const original=join(ws.work,'dir'),retained=join(ws.parent,'retained-dir');renameSync(original,retained);mkdirSync(original);
+      assert.notEqual(lstatSync(original).ino,lstatSync(retained).ino,'The fixture must substitute a distinct directory');
+      writeFileSync(join(original,'file.txt'),'y');rejects(()=>guard.capture(1,'terminal'),'SCOPE_ALIAS_UNVERIFIABLE');
+    }finally{close(ws)}}
   {const ws=workspace(),guard=ScopeGuard.open(scope(ws,['allow.txt','linked.txt']),ws.work,ws.base);linkSync(join(ws.work,'allow.txt'),join(ws.work,'linked.txt'));rejects(()=>guard.capture(1,'terminal'),'SCOPE_UNSUPPORTED_FILE');close(ws)}
   {const ws=workspace();rejects(()=>ScopeGuard.open({...scope(ws),strongConfinementRequired:true},ws.work,ws.base),'SCOPE_BASELINE_INVALID');close(ws)}
 });

@@ -14,17 +14,17 @@ async function control(directory,value){
  const socket=net.createConnection(path.join(directory,'control.sock'));socket.setTimeout(8000,()=>socket.destroy(Error('test timeout')));
  let data='';socket.on('data',b=>data+=b);await once(socket,'connect');socket.write(JSON.stringify(value)+'\n');await once(socket,'end');return JSON.parse(data);
 }
-test('private daemon authenticates before launch, preserves a live question and releases its socket on stop',async t=>{
+for(const explicitPolicy of [false,true])test('private daemon authenticates, preserves '+(explicitPolicy?'explicit review/trust policy':'server default null policy')+' and releases its socket',async t=>{
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'pi-paperclip-daemon-'));
  t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
- const issue={id:'issue',identifier:'TST-1',companyId:'company',projectId:'project',assigneeAgentId:'agent',assigneeUserId:null,status:'in_progress',executionPolicy:{mode:'standard',stages:[{id:'preserved'}]}};
+ const issue={id:'issue',identifier:'TST-1',companyId:'company',projectId:'project',assigneeAgentId:'agent',assigneeUserId:null,status:'in_progress',executionPolicy:explicitPolicy?{mode:'normal',commentRequired:true,stages:[{id:'preserved',type:'review',approvalsNeeded:1,participants:[{id:'participant',type:'user',userId:'owner'}]}],authorizationPolicy:{trustPreset:'test-preserved'},maxReviewRounds:3}:null};
  const documents=new Map(),interactions=[],patches=[];
  const server=http.createServer(async(req,res)=>{
   assert.equal(req.headers.authorization,'Bearer fixture-value');assert.equal(req.headers['x-paperclip-run-id'],'run');
   let data='';for await(const b of req)data+=b;const body=data?JSON.parse(data):null;
   const route=req.url;let result;
   if(route==='/api/agents/me')result={id:'agent',companyId:'company'};
-  else if(route==='/api/issues/issue'){if(body){patches.push(body);Object.assign(issue,body);issue.monitorNextCheckAt=body.executionPolicy?.monitor?.nextCheckAt??null;}result=issue;}
+  else if(route==='/api/issues/issue'){if(body){patches.push(body);Object.assign(issue,body);issue.monitorNextCheckAt=body.executionPolicy?.monitor?.nextCheckAt??null;if(!issue.executionPolicy?.monitor&&!issue.executionPolicy?.stages?.length)issue.executionPolicy=null;}result=issue;}
   else if(route==='/api/issues/issue/interactions'){
    if(body){const row={...body,id:'interaction',issueId:'issue',companyId:'company',requestedResolverPolicy:body.resolverPolicy,effectiveResolverPolicy:body.resolverPolicy,status:'pending'};interactions.push(row);result=row;}else result=interactions;
   }else if(route.includes('/documents/')){
@@ -56,9 +56,9 @@ rl.on('line',line=>{const packet=JSON.parse(line);if(!key){key=packet.key;emit({
  await pause(100);let result=await control(directory,{action:'status'});
  assert.equal(result.state.phase,'idle');assert.equal(result.state.runtime.credentialAbsent,true);assert.equal(interactions.length,0);
  const credentials={apiUrl,companyId:'company',issueId:'issue',agentId:'agent',runId:'run',apiKey:'fixture-value'};
- result=await control(directory,{action:'tick',credentials,waitMs:0});assert.equal(result.ok,true);assert.equal(issue.executionPolicy.monitor.kind,'external_service');assert.equal(issue.executionPolicy.monitor.scheduledBy,'assignee');
+ result=await control(directory,{action:'tick',credentials,waitMs:0});assert.equal(result.ok,true);assert.equal(issue.executionPolicy.monitor.kind,'external_service');assert.equal(issue.executionPolicy.monitor.scheduledBy,'assignee');assert.equal(issue.executionPolicy.mode,'normal');assert.equal(issue.executionPolicy.commentRequired,true);
  result=await control(directory,{action:'tick',credentials,waitMs:1000});assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.state.phase,'awaiting-human');assert.equal(interactions.length,1);
- assert.deepEqual(issue.executionPolicy.stages,[{id:'preserved'}]);assert.equal(issue.executionPolicy.monitor,null);
+ if(explicitPolicy){assert.equal(issue.executionPolicy.stages[0].participants[0].userId,'owner');assert.equal(issue.executionPolicy.authorizationPolicy.trustPreset,'test-preserved');assert.equal(issue.executionPolicy.maxReviewRounds,3);assert.equal(issue.executionPolicy.commentRequired,true);assert.equal(issue.executionPolicy.monitor,null);}else assert.equal(issue.executionPolicy,null);
  Object.assign(interactions[0],{status:'accepted',resolvedByUserId:'fixture-user',resolvedByAgentId:null,resolvedByRunId:null,resolvedAt:new Date().toISOString(),result:{version:1,outcome:'accepted'}});
  result=await control(directory,{action:'tick',credentials,waitMs:500});assert.equal(result.state.phase,'idle');assert.equal(result.state.lastCommand.received,true);
  const audit=fs.readFileSync(path.join(directory,'human-decisions.jsonl'),'utf8');assert.ok(audit.includes('fixture-user'));assert.ok(!audit.includes('fixture-value'));

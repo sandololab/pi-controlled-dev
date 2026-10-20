@@ -47,8 +47,9 @@ function validateCredentials(c){
  return new PaperclipHumanClient(c);
 }
 async function posture(client){
- const issue=client.issue,policy=issue.executionPolicy;
- if(!policy)throw Error('BRIDGE_EXECUTION_POLICY_REQUIRED');
+ // A null policy is the server's normal default, not a missing authorization.
+ // Preserve every explicit review/trust field when attaching this job's monitor.
+ const issue=client.issue,policy=issue.executionPolicy??{mode:'normal',commentRequired:true,stages:[],maxReviewRounds:null};
  const pending=['awaiting-publication','awaiting-human'].includes(state.phase);
  if(pending){
   if(!card)return;

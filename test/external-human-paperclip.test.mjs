@@ -120,3 +120,10 @@ test('invalid selections and changed question policies cannot authorize a choice
  f.interactions[0].payload.questions[0].allowOther=true;
  await assert.rejects(f.client.read(row,v),/PRESENTATION_MISMATCH/);
 });
+
+test('a human can explicitly leave an editor field empty; cancellation remains distinct',async()=>{
+ const f=fakePaperclip(),v={...nativeRequest(),kind:'editor'};await f.client.identity();const row=await f.client.publish('job',v);
+ f.accept(f.interactions[0],{status:'answered',result:{version:1,answers:[{questionId:'answer',optionIds:['empty']}]}});
+ assert.equal((await f.client.read(row,v)).value,'');
+ f.interactions[0].result.cancelled=true;assert.equal((await f.client.read(row,v)).cancelled,true);
+});

@@ -44,7 +44,7 @@ export class PaperclipHumanClient{
    {version:1,title:request.title,submitLabel:'Invia la tua scelta',supersedeOnUserComment:true,questions:[{
     id:'answer',prompt:request.title,helpText:questionHelp,selectionMode:'single',required:true,
     allowOther:false,options:request.kind==='select'?request.options.map((label,i)=>({id:'option-'+i,label})):
-     [{id:'text',label:'Scrivi la risposta',freeText:true}]}]};
+     [{id:'text',label:'Scrivi la risposta',freeText:true},{id:'empty',label:'Lascia vuoto'}]}]};
   const result=existing??await this.api('POST','/issues/'+this.issueId+'/interactions',{kind:confirm?'request_confirmation':'ask_user_questions',idempotencyKey,
    title:'Pi — '+request.title.slice(0,140),resolverPolicy:'human_only',continuationPolicy:'wake_assignee',payload});
   const verified=this.validate(result,request);
@@ -60,7 +60,7 @@ export class PaperclipHumanClient{
    const q=row.payload?.questions?.[0];
    if(row.payload?.questions?.length!==1||q?.id!=='answer'||q.prompt!==request.title||typeof q.helpText!=='string'||!q.helpText.includes('Riferimento: '+request.digest+' / revisione: ')||q.selectionMode!=='single')throw Error('PAPERCLIP_PRESENTATION_MISMATCH');
    if(q.required!==true||q.allowOther!==false)throw Error('PAPERCLIP_PRESENTATION_MISMATCH');
-   if(request.kind==='editor'&&canonical(q.options)!==canonical([{id:'text',label:'Scrivi la risposta',freeText:true}]))throw Error('PAPERCLIP_PRESENTATION_MISMATCH');
+   if(request.kind==='editor'&&canonical(q.options)!==canonical([{id:'text',label:'Scrivi la risposta',freeText:true},{id:'empty',label:'Lascia vuoto'}]))throw Error('PAPERCLIP_PRESENTATION_MISMATCH');
    if(request.kind==='select'&&canonical(q.options)!==canonical(request.options.map((label,i)=>({id:'option-'+i,label}))))throw Error('PAPERCLIP_PRESENTATION_MISMATCH');
   }
   return row;
@@ -93,7 +93,12 @@ export class PaperclipHumanClient{
   if(request.kind==='select'){
    if(a.optionIds?.length!==1||a.otherText)throw Error('PAPERCLIP_ANSWER_INVALID');
    const index=request.options.findIndex((_,i)=>a.optionIds[0]==='option-'+i);if(index<0)throw Error('PAPERCLIP_ANSWER_INVALID');value=request.options[index];
-  }else{if(a.optionIds?.length!==1||a.optionIds[0]!=='text'||typeof a.otherText!=='string'||!a.otherText.trim()||a.otherText.length>60000)throw Error('PAPERCLIP_ANSWER_INVALID');value=a.otherText;}
+  }else{
+   if(a.optionIds?.length!==1)throw Error('PAPERCLIP_ANSWER_INVALID');
+   if(a.optionIds[0]==='empty'&&!a.otherText)value='';
+   else if(a.optionIds[0]==='text'&&typeof a.otherText==='string'&&a.otherText.trim()&&a.otherText.length<=60000)value=a.otherText;
+   else throw Error('PAPERCLIP_ANSWER_INVALID');
+  }
   return {...proof,value};
  }
 }

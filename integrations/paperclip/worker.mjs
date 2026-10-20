@@ -2,6 +2,7 @@ import readline from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {digest,seal,verify,redact} from './protocol.mjs';
+import {runPhotobookConversation} from './conversation.mjs';
 const lines=readline.createInterface({input:process.stdin,crlfDelay:Infinity});
 const incoming=[],waiters=[];lines.on('line',line=>{try{const v=JSON.parse(line);const next=waiters.shift();next?next(v):incoming.push(v);}catch{process.exit(2);}});
 const next=()=>incoming.length?Promise.resolve(incoming.shift()):new Promise(r=>waiters.push(r));
@@ -54,7 +55,13 @@ async function execute(message){
  if(config.profile==='redazione'&&message.name==='editorial'&&!/^(create|revise|workspace-(?:status|resume|decide|retry|preview|brief))\b/.test(message.args))throw Error('BRIDGE_LEGACY_EDITORIAL_COMMAND_UNSUPPORTED');
  const handler=commands.get(message.name)?.handler;if(!handler)throw Error('BRIDGE_COMMAND_UNAVAILABLE');
  commandBusy=true;emit({type:'command-start',commandId:message.commandId});
- try{await handler(message.args,context);let nativeStatus=null;
+ try{
+  if(config.profile==='redazione'&&message.name==='photobook'){
+   if(!message.args.trim())throw Error('BRIDGE_PHOTOBOOK_REQUEST_REQUIRED');
+   await runPhotobookConversation({session,initial:'Usa photobook_factory e la skill photobook-editing per questa richiesta dell’autore: '+message.args,ask,makeRequest:request,emit,
+    maxTurns:config.maxModelTurns??4,maxToolCalls:config.maxToolCalls??120});
+  }else await handler(message.args,context);
+  let nativeStatus=null;
   if(config.profile==='sviluppo'){const q={sessionId:context.sessionManager.getSessionId()};bus.emit('controlled-dev:human-host-status:v1',q);nativeStatus=q.result??null;}
   emit({type:'command-finished',commandId:message.commandId,notifications:[...notifications],nativeStatus,nativeCompletionNotInferred:true});}
  catch(e){emit({type:'command-failed',commandId:message.commandId,error:redact(e.message)});}

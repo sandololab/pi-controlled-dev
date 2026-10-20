@@ -51,7 +51,7 @@ test('changed native subject after human acceptance burns the receipt without ac
 });
 function fakePaperclip(){
  const calls=[],documents=new Map(),interactions=[];const state={calls,documents,interactions};
- const actor={id:'agent',companyId:'company'},issue={id:'issue',identifier:'TST-1',projectId:'project',companyId:'company',assigneeAgentId:'agent',assigneeUserId:null,status:'in_progress',executionPolicy:{mode:'standard',commentRequired:false,stages:[]}};
+ const actor={id:'agent',companyId:'company'},issue={id:'issue',identifier:'TST-1',projectId:'project',companyId:'company',assigneeAgentId:'agent',assigneeUserId:null,status:'in_progress',executionPolicy:{mode:'normal',commentRequired:true,stages:[]}};
  const fetcher=async(url,options={})=>{
   calls.push({url,method:options.method,headers:options.headers});
   assert.equal(options.headers.Authorization,'Bearer ephemeral-test-value');assert.equal(options.headers['X-Paperclip-Run-Id'],'run');
@@ -126,4 +126,19 @@ test('a human can explicitly leave an editor field empty; cancellation remains d
  f.accept(f.interactions[0],{status:'answered',result:{version:1,answers:[{questionId:'answer',optionIds:['empty']}]}});
  assert.equal((await f.client.read(row,v)).value,'');
  f.interactions[0].result.cancelled=true;assert.equal((await f.client.read(row,v)).cancelled,true);
+});
+
+
+test('canonical Paperclip free text with no selected option ID resumes only a verified human editor answer',async()=>{
+ const f=fakePaperclip(),q={...nativeRequest(),kind:'editor'};await f.client.identity();const row=await f.client.publish('job',q);
+ f.accept(f.interactions[0],{status:'answered',result:{version:1,answers:[{questionId:'answer',optionIds:[],otherText:'Use a more spacious A4 layout'}]}});
+ const answer=await f.client.read(row,q);assert.equal(answer.value,'Use a more spacious A4 layout');assert.equal(answer.actorUserId,'owner');
+ f.interactions[0].resolvedByAgentId='agent';await assert.rejects(f.client.read(row,q),/HUMAN_RESOLVER_REQUIRED/);
+});
+test('empty, unknown, mixed and malformed editor choices never become a text response',async()=>{
+ for(const answer of [{optionIds:[]},{optionIds:[],otherText:'  '},{optionIds:['empty'],otherText:'contradiction'},{optionIds:['unknown'],otherText:'text'},{optionIds:['text','empty'],otherText:'text'},{optionIds:'text',otherText:'text'}]){
+  const f=fakePaperclip(),q={...nativeRequest(),kind:'editor'};await f.client.identity();const row=await f.client.publish('job',q);
+  f.accept(f.interactions[0],{status:'answered',result:{version:1,answers:[{questionId:'answer',...answer}]}});
+  await assert.rejects(f.client.read(row,q),/ANSWER_INVALID/);
+ }
 });

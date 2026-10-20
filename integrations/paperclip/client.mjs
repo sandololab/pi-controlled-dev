@@ -94,9 +94,11 @@ export class PaperclipHumanClient{
    if(a.optionIds?.length!==1||a.otherText)throw Error('PAPERCLIP_ANSWER_INVALID');
    const index=request.options.findIndex((_,i)=>a.optionIds[0]==='option-'+i);if(index<0)throw Error('PAPERCLIP_ANSWER_INVALID');value=request.options[index];
   }else{
-   if(a.optionIds?.length!==1)throw Error('PAPERCLIP_ANSWER_INVALID');
-   if(a.optionIds[0]==='empty'&&!a.otherText)value='';
-   else if(a.optionIds[0]==='text'&&typeof a.otherText==='string'&&a.otherText.trim()&&a.otherText.length<=60000)value=a.otherText;
+   if(!Array.isArray(a.optionIds)||a.optionIds.length>1)throw Error('PAPERCLIP_ANSWER_INVALID');
+   if(a.optionIds.length===1&&a.optionIds[0]==='empty'&&!a.otherText)value='';
+   // Paperclip's canonical free-text response omits the custom option ID.
+   // Explicit legacy 'text' remains accepted; an empty selection alone is never consent.
+   else if((a.optionIds.length===0||a.optionIds[0]==='text')&&typeof a.otherText==='string'&&a.otherText.trim()&&a.otherText.length<=60000)value=a.otherText;
    else throw Error('PAPERCLIP_ANSWER_INVALID');
   }
   return {...proof,value};

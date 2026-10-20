@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { chooseAction } from './controlled-ui.js';
 import type { ControlledUI } from './controlled-ui.js';
 import type { HumanConfirmationChannel } from './trusted-confirmation.js';
@@ -8,7 +9,7 @@ import { rebuildProjectMemoryView } from './human-repository.js';
 
 /** Native human host action only. No agent tool, candidate writes or task-state changes. */
 export async function showProjectMemory(ctx:HumanConfirmationChannel&{ui:ControlledUI},repo:ProjectMemoryRepository|undefined):Promise<void>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(!repo){ctx.ui.notify("There are no project memories yet. Technical proposals are collected during tasks and require a separate decision before becoming current.",'info');return}
   const entries=repo.entries(),choices=entries.map(e=>`${e.record.title.slice(0,120)} — ${e.record.status} (${e.record.recordId})`);
   if(!choices.length){ctx.ui.notify("There are no memory proposals to examine yet.",'info');return}

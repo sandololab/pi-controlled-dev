@@ -1,3 +1,4 @@
+import { hasHumanChannel, createExternalHumanContext } from '../src/external-human-channel.js';
 import { resolveDevelopmentProfile } from '../src/development-profile.js';
 import type { DevelopmentProfile } from '../src/development-profile.js';
 import { productionAutonomy, productionAutonomyDriver } from '../src/project-autonomy-production.js';
@@ -96,9 +97,24 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
   let busy=false;
   let readingBusy=false;
   let wizardActive=false;
+  // Host-code event, not a model tool: the adapter supplies an authenticated human transport.
+  pi.events.on('controlled-dev:human-host-context:v1',input=>{
+    const q=input as {context:CommandContext;confirm:Parameters<typeof createExternalHumanContext>[1];result?:unknown};
+    if(!q?.context||!owner||q.context.sessionManager?.getSessionId()!==owner||typeof q.confirm!=='function')throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+    q.result=createExternalHumanContext(q.context,q.confirm);
+  });
+  pi.events.on('controlled-dev:human-host-status:v1',input=>{
+    const q=input as {sessionId:string;result?:unknown};
+    if(!q||q.sessionId!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+    const current=orchestrator?.current;
+    q.result={taskId:current?.spec.taskId??null,nativeState:current?.state.state??null,
+      specHash:current?.state.specHash??null,candidateDigest:current?.state.candidate?.digest??null,
+      revision:current?.state.revision??null,completed:current?.state.state==='COMPLETED',
+      integrationNotInferred:true};
+  });
   let panelScope:object={};
   async function consultReadonly(ctx:CommandContext,reading:'project consult'|'project status'|'status'){
-    if(ctx.mode!=='tui'||!owner||ctx.sessionManager?.getSessionId()!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+    if(!hasHumanChannel(ctx)||!owner||ctx.sessionManager?.getSessionId()!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
     ctx={...ctx,cwd:selectedProjectRoot??discoverCurrentProject(ctx.cwd),ui:serializeControlledPanels(ctx.ui,panelScope)};
     if(readingBusy){ctx.ui.notify("A consultation is already open. Close it before opening another.",'info');return}
     readingBusy=true;
@@ -121,7 +137,7 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
   const controlledCommand = {
     description: "Opens or creates the project in the current folder; then describe the work in natural language. Options: request <description> | menu | project [request|plan|refine|consult|status|check|import|adopt|recover-storage|resume-storage [task]] | memory | new | status [--technical] | rebuild-view | run | integrate | recover | reconcile | resume | repair | close-attempt | decide APPROVE|REJECT|ANSWER [text]",
     async handler(args:string, ctx:CommandContext) {
-      if(!ctx||ctx.mode!=='tui'||typeof ctx.ui?.confirm!=='function'||typeof ctx.ui?.notify!=='function'||!owner||ctx.sessionManager?.getSessionId()!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+      if(!ctx||!hasHumanChannel(ctx)||typeof ctx.ui?.confirm!=='function'||typeof ctx.ui?.notify!=='function'||!owner||ctx.sessionManager?.getSessionId()!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
       ctx={...ctx,ui:serializeControlledPanels(ctx.ui,panelScope)};
       ctx={...ctx,ui:{...ctx.ui,readPlanSnapshot:()=>{const repo=productionProjectPlanning(ctx);return repo?readProjectPlanSnapshot(repo):{summary:"No approved plan is available yet.",points:[]}}}};
       const invocationCwd=ctx.cwd;
@@ -204,7 +220,7 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
         if(decision==="Answer"){const answer=await ctx.ui.editor?.("Write your answer",'');if(!answer?.trim())return;args=`decide ANSWER ${answer}`}
         else args=decision==="Approve"?'decide APPROVE':'decide REJECT';
       }
-      if (!ctx || ctx.mode !== 'tui' || typeof ctx.ui?.confirm !== 'function'
+      if (!ctx || !hasHumanChannel(ctx) || typeof ctx.ui?.confirm !== 'function'
         || typeof ctx.ui?.notify !== 'function') throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
       const session = ctx.sessionManager?.getSessionId();
       if (!session || session !== owner || session !== commandOwner) throw new Error('HUMAN_CHANNEL_UNAVAILABLE');

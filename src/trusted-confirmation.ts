@@ -1,3 +1,4 @@
+import { hasHumanChannel, confirmExternalHuman, externalHumanMethod } from './external-human-channel.js';
 import { randomUUID } from 'node:crypto';
 import { confirmChoice } from './controlled-ui.js';
 import type { CustomUI } from './controlled-ui.js';
@@ -10,17 +11,18 @@ export interface HumanConfirmationChannel {
   readonly mode:string; readonly sessionManager:{getSessionId():string|undefined};
   readonly ui:{confirm(title:string,message:string,options?:{timeout?:number}):Promise<boolean>;custom?:CustomUI};
 }
-export type ConfirmationSource='ctx.ui.confirm'|'ctx.ui.custom';
+export type ConfirmationSource='ctx.ui.confirm'|'ctx.ui.custom'|'external-human';
 /** Shared native transport. An affirmative return is not itself an authorization receipt. */
 export async function requestHumanConfirmation(ctx:HumanConfirmationChannel,display:string,title:string):Promise<ConfirmationSource|undefined>{
   const session=ctx?.sessionManager?.getSessionId();
+  if(ctx?.mode==='external-human')return await confirmExternalHuman(ctx,title,display)?'external-human':undefined;
   const custom=ctx?.ui?.custom,confirm=ctx?.ui?.confirm;
-  if(ctx?.mode!=='tui'||!session||(typeof custom!=='function'&&typeof confirm!=='function'))throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!session||(typeof custom!=='function'&&typeof confirm!=='function'))throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   try{
     const result:unknown=typeof custom==='function'
       ?await confirmChoice(ctx.ui,title,display)
       :await confirm.call(ctx.ui,title,display,{timeout:120000});
-    if(result!==true||ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==session)return undefined;
+    if(result!==true||!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==session)return undefined;
     if(typeof custom==='function')return ctx.ui.custom===custom?'ctx.ui.custom':undefined;
     return ctx.ui.confirm===confirm?'ctx.ui.confirm':undefined;
   }catch{return undefined}
@@ -93,17 +95,17 @@ export async function presentTrustedConfirmation(ctx:HumanConfirmationChannel,re
     subjectKind:exact.subjectKind,subjectId:exact.subjectId,subjectRevision:exact.subjectRevision,action:exact.action,
     payloadDigest:exact.payloadDigest,presentationDigest:hashCanonical(exact.presentation),requestDigest:hashCanonical(exact),decision:exact.action,
     confirmedAt:new Date().toISOString(),confirmationInstance:{id:randomUUID(),sessionId:sessionId!,source}});
-  receipts.set(receipt,{request:exact,ctx,source,method:source==='ctx.ui.custom'?methods.custom:methods.confirm});return receipt;
+  receipts.set(receipt,{request:exact,ctx,source,method:source==='external-human'?externalHumanMethod(ctx):source==='ctx.ui.custom'?methods.custom:methods.confirm});return receipt;
 }
 /** One genuine TUI decision for several exact, separately bound subjects. No inferred approval. */
 export async function presentTrustedConfirmationBundle(ctx:HumanConfirmationChannel,items:readonly TrustedConfirmationRequest[]):Promise<readonly TrustedConfirmationReceipt[]|undefined>{
   if(items.length<2||items.length>4||new Set(items).size!==items.length||items.some(q=>!requests.has(q)))fail('TRUSTED_CONFIRMATION_REQUEST_UNREGISTERED');
   const content=items.map(q=>checkedRequest(q).presentation.content).join('\n\n────────────────────────\n\n');
   if(byteLength(content)>CONFIRMATION_LIMITS.presentationBytes)fail('TRUSTED_CONFIRMATION_INVALID');
-  const sessionId=ctx.sessionManager.getSessionId(),method=ctx.ui.custom??ctx.ui.confirm;
+  const sessionId=ctx.sessionManager.getSessionId(),method=ctx.mode==='external-human'?externalHumanMethod(ctx):ctx.ui.custom??ctx.ui.confirm;
   for(const q of items)requests.delete(q);
   const source=await requestHumanConfirmation(ctx,content,"Approve the plan and controlled autonomy?");
-  if(!source||ctx.sessionManager.getSessionId()!==sessionId||(ctx.ui.custom??ctx.ui.confirm)!==method)return;
+  if(!source||ctx.sessionManager.getSessionId()!==sessionId||(ctx.mode==='external-human'?externalHumanMethod(ctx):ctx.ui.custom??ctx.ui.confirm)!==method)return;
   return Object.freeze(items.map(request=>{const q=checkedRequest(request),receipt:TrustedConfirmationReceipt=freeze({schemaVersion:1,confirmationId:q.confirmationId,purpose:q.purpose,
     subjectKind:q.subjectKind,subjectId:q.subjectId,subjectRevision:q.subjectRevision,action:q.action,payloadDigest:q.payloadDigest,
     presentationDigest:hashCanonical(q.presentation),requestDigest:hashCanonical(q),decision:q.action,confirmedAt:new Date().toISOString(),
@@ -120,8 +122,8 @@ export function consumeTrustedConfirmation(receipt:TrustedConfirmationReceipt,re
   const issued=receipt&&receipts.get(receipt);if(!issued)fail('TRUSTED_CONFIRMATION_RECEIPT_INVALID');
   receipts.delete(receipt);
   const {request,ctx,source,method}=issued;
-  const channelCurrent=()=>{if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==receipt.confirmationInstance.sessionId||
-    (source==='ctx.ui.custom'?ctx.ui.custom:ctx.ui.confirm)!==method)fail('TRUSTED_CONFIRMATION_STALE')};
+  const channelCurrent=()=>{if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==receipt.confirmationInstance.sessionId||
+    (source==='external-human'?externalHumanMethod(ctx):source==='ctx.ui.custom'?ctx.ui.custom:ctx.ui.confirm)!==method)fail('TRUSTED_CONFIRMATION_STALE')};
   channelCurrent();sameCurrent(request,readCurrent());
   const packet:TrustedConfirmationEvidence={schemaVersion:1,request,receipt},content=canonicalize(packet);
   const ref=store.put(`confirmation-${receipt.confirmationInstance.id}`,content,TRUSTED_CONFIRMATION_MEDIA);
@@ -138,7 +140,7 @@ export function readTrustedConfirmationEvidence(store:Pick<ReceiptStore,'read'>,
   const q=checkedRequest(packet.request),r=packet.receipt;
   closed(r,['schemaVersion','confirmationId','purpose','subjectKind','subjectId','subjectRevision','action','payloadDigest','presentationDigest','requestDigest','decision','confirmedAt','confirmationInstance']);
   closed(r.confirmationInstance,['id','sessionId','source']);scalar('ID',r.confirmationInstance.id);scalar('Text',r.confirmationInstance.sessionId);scalar('Time',r.confirmedAt);
-  if(!['ctx.ui.confirm','ctx.ui.custom'].includes(r.confirmationInstance.source)||r.schemaVersion!==1||r.decision!==q.action||
+  if(!['ctx.ui.confirm','ctx.ui.custom','external-human'].includes(r.confirmationInstance.source)||r.schemaVersion!==1||r.decision!==q.action||
     r.requestDigest!==hashCanonical(q)||r.payloadDigest!==q.payloadDigest||r.presentationDigest!==hashCanonical(q.presentation)||
     ['confirmationId','purpose','subjectKind','subjectId','subjectRevision','action'].some(k=>r[k as keyof TrustedConfirmationReceipt]!==q[k as keyof TrustedConfirmationRequest]))fail('TRUSTED_CONFIRMATION_EVIDENCE_INVALID');
   sameCurrent(q,expected);

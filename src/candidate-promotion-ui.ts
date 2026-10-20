@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { chooseAction, withProgress } from './controlled-ui.js';
 import type { ControlledUI } from './controlled-ui.js';
 import type { CandidatePromotionRepository } from './candidate-promotion-repository.js';
@@ -6,7 +7,7 @@ import { presentTrustedConfirmation } from './trusted-confirmation.js';
 import type { HumanConfirmationChannel } from './trusted-confirmation.js';
 import { promotionNarrative } from './candidate-promotion.js';
 export async function showCandidatePromotion(ctx:HumanConfirmationChannel&{ui:ControlledUI},repo:CandidatePromotionRepository,taskId:string,reviewer?:ControlledReviewerRunner):Promise<void>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(repo.terminalRestorationRequired(taskId)){
     const request=repo.prepareTerminalRestoration(taskId),receipt=await presentTrustedConfirmation(ctx,request);
     if(!receipt){ctx.ui.notify("Resume was not confirmed. The saved version and completion are preserved.",'info');return}

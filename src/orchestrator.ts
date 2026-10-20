@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { captureCandidateCheckpoint } from './candidate-checkpoints.js';
 import { captureBoundedDeveloperCheckpoint } from './bounded-developer-checkpoint.js';
 import { captureDeveloperBaseline, createReviewerBaselineContext } from './developer-baseline.js';
@@ -358,7 +359,7 @@ export function humanGateDisplay(request:HumanGateRequest,choice:HumanDecisionCh
 }
 /** The sole production confirmation boundary. Choice/answer are untrusted until the exact display is confirmed. */
 export async function presentHumanGate(ctx:HumanGateChannel,request:HumanGateRequest,choice:HumanDecisionChoice={decision:'APPROVE'}):Promise<TrustedHumanDecision|undefined>{
-  if(ctx?.mode!=='tui'||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function')||!ctx.sessionManager?.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function')||!ctx.sessionManager?.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(!humanRequests.has(request)||!choice||Object.keys(choice).some(k=>!['decision','answer'].includes(k))
     ||!(HUMAN_GATE_DECISIONS[request.gateType] as readonly string[]).includes(choice.decision)
     ||(choice.decision==='ANSWER'?!validateScalar('Text',choice.answer).ok:choice.answer!==undefined))throw new Error('HUMAN_DECISION_INVALID');
@@ -610,7 +611,7 @@ export class CentralOrchestrator {
     this.#lockManager.releaseAll(this.#locks);
   }
   representPendingGate(ctx:HumanGateChannel):HumanGateRequest{
-    if(ctx?.mode!=='tui'||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function'))throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+    if(!hasHumanChannel(ctx)||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function'))throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
     if(ctx.sessionManager?.getSessionId()!==this.#ownerSessionId)throw new HumanDecisionStaleError('SESSION_CHANGED');
     if(!this.#recoveryAuthority||!this.#store||this.#state.state!=='AWAITING_HUMAN')throw new Error('RECOVERY_PRESENTATION_DENIED');
     this.#cas(this.#state.revision);this.#requireQuiescent();
@@ -1279,7 +1280,7 @@ export class CentralOrchestrator {
     if(!policy){
       if(!input||!humanReceipts.has(input))throw new Error('HUMAN_DECISION_INVALID');
       const held=humanReceipts.get(input)!;humanReceipts.delete(input);
-      if(held.ctx.mode!=='tui')throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+      if(!hasHumanChannel(held.ctx))throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
       if(canonicalize(input.snapshot)!==canonicalize(snapshot))throw new HumanDecisionStaleError('CONFIRMATION_BINDING_CHANGED');
       sessionId=held.ctx.sessionManager.getSessionId()??'';source=held.source;
     }

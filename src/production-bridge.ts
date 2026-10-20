@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { prepareProjectRuntimeImport, projectRuntimeImportRequest, authorizeProjectRuntimeImport, completeProjectRuntimeImport, abortProjectRuntimeImport, prepareProjectRuntimeImportRecovery, projectRuntimeImportRecoveryRequest, recoverProjectRuntimeImport } from './project-runtime-import.js';
 import { takeOverImportedWorkflow } from './recovery-resume.js';
 import { setTimeout } from 'node:timers';
@@ -103,7 +104,7 @@ export function productionCandidatePromotion(ctx:Pick<ProductionCommandContext,'
   return CandidatePromotionRepository.open(configRoot(),realpathSync(ctx.cwd),inspectArtifact);
 }
 export async function withProductionPromotion<T>(ctx:ProductionCommandContext,action:(repo:CandidatePromotionRepository,taskId:string)=>Promise<T>,taskId?:string):Promise<T>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const target=recoveryTarget(ctx,taskId??readProductionTaskInput(ctx).spec.taskId);if(!target)throw new Error('RECOVERY_TASK_NOT_FOUND');
   return CandidatePromotionRepository.withLease(configRoot(),realpathSync(ctx.cwd),inspectArtifact,async repo=>{
     const result=await action(repo,target.taskId);
@@ -194,7 +195,7 @@ function projectQuiescenceCheck(tasksRoot:string,manager:LockManager,lock:import
 /** The sole project adoption path: native confirmation, one existing lease and
  * verified saved role results before moving the existing collection. */
 export async function adoptProductionProject(ctx:ProductionCommandContext):Promise<boolean>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const repoRoot=realpathSync(ctx.cwd),machineDataRoot=configRoot();
   return CandidatePromotionRepository.withLease(machineDataRoot,repoRoot,inspectArtifact,async promotion=>{
     const planning=productionProjectPlanning(ctx);if(!planning)throw new Error('PROJECT_HANDOFF_PROJECT_MISSING');
@@ -216,7 +217,7 @@ export async function adoptProductionProject(ctx:ProductionCommandContext):Promi
   });
 }
 export async function recoverProductionProjectHandoff(ctx:ProductionCommandContext):Promise<boolean>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const repoRoot=realpathSync(ctx.cwd),machineDataRoot=configRoot();
   const manager=new LockManager(machineDataRoot,`candidate-promotion-${randomUUID()}`,`handoff-${randomUUID()}`),workspaceLock=manager.acquireWorkspace(repoRoot);
   try{
@@ -325,7 +326,7 @@ export function executablePath(input:string):string{
 }
 /** Interactive command UI only. Task creation is not an implementation/completion approval. */
 export async function createProductionTask(ctx:ProductionCommandContext,propose?:ProposeTask,planned?:{readonly seed:PlannedTaskSeed;readonly beforeSave:(spec:TaskSpec,manager:LockManager)=>void;readonly scoutResult?:PreTaskProposalResult}):Promise<TaskSpec|undefined>{
-  if(ctx.mode!=='tui'||!ctx.ui.editor||!ctx.ui.select||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.ui.editor||!ctx.ui.select||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(ctx.prepareProjectBaseline&&!await ctx.prepareProjectBaseline())return;
   const {repo,data,path}=expectedTaskPath(ctx),session=ctx.sessionManager.getSessionId();
   const checkRepo=()=>{
@@ -672,7 +673,7 @@ export function productionOpeningTaskPreview(ctx:Pick<ProductionCommandContext,'
 /** Read-only chooser. Failed proof/unsupported checkpoints never appear as
  * resumable entries; preparing a proposal performs no store or permission write. */
 export function productionProjectStorageResumeChoices(ctx:ProductionCommandContext):readonly {taskId:string;title:string}[]{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const storage=resolveProjectStorage(configRoot(),realpathSync(ctx.cwd));if(!storage.custodian)return [];
   const root=join(storage.projectRoot,'tasks'),choices:{taskId:string;title:string}[]=[];
   let ids:string[];try{ids=readdirSync(root).sort()}catch(error){if((error as {code?:string}).code==='ENOENT')return [];throw error}
@@ -690,7 +691,7 @@ export function productionProjectStorageResumeChoices(ctx:ProductionCommandConte
 /** Explicit native acquisition of local authority for an intact released
  * portable task. Ordinary run/recover never substitutes this approval. */
 export async function resumeProductionProjectStorage(host:OrchestratorHost,ctx:ProductionCommandContext,taskId:string):Promise<boolean>{
-  if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(host.current){
     const locks=host.current.lockStatus();
     if(!['COMPLETED','FAILED'].includes(host.current.state.state)||locks.taskLockHeld||locks.workspaceLockHeld)throw new Error('WORKFLOW_ALREADY_ACTIVE');
@@ -718,7 +719,7 @@ export async function resumeProductionProjectStorage(host:OrchestratorHost,ctx:P
   return true;
 }
 export async function recoverProductionWorkflow(host:OrchestratorHost,ctx:ProductionCommandContext,action:'recover'|'reconcile'|'resume'|'repair'|'close-attempt',events:RpcEvents,taskId?:string){
-  if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const target=recoveryTarget(ctx,taskId??host.current?.state.taskId);if(!target)throw new Error("No saved task for this repository.");
   if(host.current&&(host.current.state.taskId!==target.taskId||host.current.state.repoRoot!==realpathSync(ctx.cwd)))throw new Error('RECOVERY_TASK_MISMATCH');
   const status=()=>productionRecoveryStatus(ctx,target.taskId)!;
@@ -787,7 +788,7 @@ export async function requestBeforeCompletionConfirmation(ctx:ProductionCommandC
 
 /** Host-only bounded question sequence. Confirmed answers never substitute for writer authorization. */
 export async function clarifyProductionScout(workflow:CentralOrchestrator,ctx:ProductionCommandContext):Promise<boolean>{
-  if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==workflow.state.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==workflow.state.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   let coverage=workflow.scoutClarifications();
   if(coverage.status==='INVALID_EVIDENCE')throw new Error('SCOUT_CLARIFICATION_INVALID');
   const scout=workflow.context().records.find(r=>r.kind==='ScoutResult'&&r.id===workflow.state.runs.findLast(r=>r.role==='Scout')?.resultRef);
@@ -834,7 +835,7 @@ async function prepareProductionAnalysis(workflow:CentralOrchestrator,ctx:Produc
 
 /** Host-only serial bridge. The interactive context is never serialized or sent to a child. */
 export async function runProductionWorkflow(host:OrchestratorHost,ctx:ProductionCommandContext):Promise<ProductionRunResult>{
-  if(ctx.mode!=='tui'||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function')||typeof ctx.ui?.notify!=='function')throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function')||typeof ctx.ui?.notify!=='function')throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const sessionId=ctx.sessionManager?.getSessionId();
   if(!sessionId||sessionId!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(host.current)throw new Error('WORKFLOW_ALREADY_ACTIVE');
@@ -854,7 +855,7 @@ export async function runProductionWorkflow(host:OrchestratorHost,ctx:Production
 }
 
 export async function decideProductionHumanGate(host:OrchestratorHost,ctx:ProductionCommandContext,choice:HumanDecisionChoice):Promise<ProductionRunResult>{
-  if(ctx.mode!=='tui'||ctx.sessionManager?.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||ctx.sessionManager?.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const workflow=host.current,request=workflow?.pendingHumanGate;
   if(!workflow||!request)throw new Error('NO_PENDING_GATE');
   const receipt=await presentHumanGate(ctx,request,choice);

@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { resolve } from 'node:path';
 import { chooseAction, errorPresentation } from './controlled-ui.js';
 import { validateSourceLocation, validateDestinationLocation } from './source-project.js';
@@ -17,9 +18,9 @@ export function projectLocation(cwd:string,value:string):string {
 export async function showSourceProject(ctx:ProductionCommandContext,scout:PreTaskScout|undefined,
  factory:(source:string,target:string)=>SourceProject,planningFor:(root:string)=>ProjectPlanningRepository,
  selected:(root:string)=>void,start:(root:string,seed:PlannedTaskSeed,planning:ProjectPlanningRepository)=>Promise<void>,prefill:{source?:string;objective?:string}={}):Promise<void> {
- if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId()||!ctx.ui.editor||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+ if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId()||!ctx.ui.editor||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
  if(!scout)throw new Error('PRE_TASK_SCOUT_UNAVAILABLE');
- const session=ctx.sessionManager.getSessionId(),check=()=>{if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
+ const session=ctx.sessionManager.getSessionId(),check=()=>{if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
  const input=async(question:string,why:string,step:number,prefill='')=>{
   const value=ctx.ui.wizardInput?await ctx.ui.wizardInput(`Questions (${step}/3)`,prefill,{step,total:3,section:"Start from existing code",question,why}):await ctx.ui.editor!(question,prefill);check();return value;
  };

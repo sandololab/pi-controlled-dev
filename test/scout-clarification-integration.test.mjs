@@ -11,7 +11,8 @@ const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts'
 const {scoutClarificationDispatch}=await import('../src/scout-clarifications.ts');
 const {DurableStore}=await import('../src/store.ts');
 const {clarifyProductionScout,continueProductionWorkflow}=await import('../src/production-bridge.ts');
-const {presentHumanGate}=await import('../src/orchestrator.ts');
+const {presentHumanGate,createAssignment}=await import('../src/orchestrator.ts');
+const {verifyPreparedReviewPacket}=await import('../src/controlled-reviewer.ts');
 const {verifyCompletionPackage}=await import('../src/completion-package.ts');
 const ctx=(f,confirm=true)=>({mode:'tui',cwd:f.repo,sessionManager:{getSessionId:()=> 'owner'},ui:{confirm:async()=>confirm,notify(){}}});
 async function setup(t,ambiguities=['Quale formato?', 'Quale semantica?'],extra={}){
@@ -41,7 +42,18 @@ test('frozen Scout questions receive atomic bound answers, survive durable reloa
  assert.match(scoutClarificationDispatch(developer.options.scoutClarifications,developer.a),/Semantica pubblica corrente/);
  assert.equal(developer.a.objective,`${o.spec.objective} Perform the change only inside workRoot; never modify repoRoot.`);
  o.testing(o.state.revision);o.validateApproved(o.state.revision);const c=o.candidateCapture;
- await o.review(o.state.revision,{candidateManifest:c.manifest,diff:c.patch,changedFiles:c.changedFiles,handoff:c.handoff,residualRisks:[],evidenceRefs:['source']});
+ const host={candidateManifest:c.manifest,diff:c.patch,changedFiles:c.changedFiles,handoff:c.handoff,residualRisks:[],evidenceRefs:['source']};
+ const draft=o.buildReviewPacket(createAssignment(o.spec,o.state,'Reviewer'),host);
+ const assignment=createAssignment(o.spec,o.state,'Reviewer',{inputArtifactRefs:draft.evidenceRefs}),prepared=o.buildReviewPacket(assignment,host);
+ const context=o.context(assignment,prepared.validationResults.map(v=>v.id)),workspace={diff:c.patch,changedFiles:c.changedFiles},beforeReview=o.state;
+ for(const mutation of ['wrong-assignment','unproven-scout']){
+  const records=context.records.map(r=>r.id===scout.id&&mutation==='wrong-assignment'?{...r,value:{...r.value,assignmentHash:'0'.repeat(64)}}
+   :r.id===context.stateId&&mutation==='unproven-scout'?{...r,value:{...r.value,runs:r.value.runs.map(run=>run.role==='Scout'?{...run,status:'UNKNOWN'}:run)}}:r);
+  assert.throws(()=>verifyPreparedReviewPacket(prepared,assignment,{...context,records},c.manifest,workspace),e=>e.code==='INVALID_REVIEW_PACKET'&&e.diagnostic.path===`evidenceRefs.${scout.id}.contract`,mutation);
+ }
+ assert.deepEqual(o.state,beforeReview);
+ await o.review(o.state.revision,host)
+  .catch(error=>{throw new Error(`${error.message}: ${JSON.stringify(error.diagnostic)}`,{cause:error})});
  const reviewer=dispatched.find(d=>d.a.role==='Reviewer');assert.match(scoutClarificationDispatch(reviewer.options.scoutClarifications,reviewer.a),/Formato documentato/);
  const packet=o.completionPackage(o.state.revision).artifact,store={read:ref=>DurableStore.readArtifact(f.storeRoot,ref)},p=JSON.parse(Buffer.from(store.read(packet)).toString());
  const completedLedger=DurableStore.load(f.storeRoot);assert.equal(verifyCompletionPackage(p,completedLedger.state,completedLedger.records,store).status,'COMPLETION_PACKAGE_VALID');

@@ -11,8 +11,8 @@ import { canonicalize, hashCanonical, hashBytes, parseJson, validateScalar, vali
 import type { ArtifactRef, CandidateManifest, TaskSpec } from './contracts.js';
 import { DurableStore } from './store.js';
 import type { ArtifactInspection, StoredLedger } from './store.js';
-import { LockManager } from './lock-manager.js';
-import type { LockHandle, LockRecord } from './lock-manager.js';
+import { LockManager, withProjectWorkspaceLease } from './lock-manager.js';
+import type { LockHandle } from './lock-manager.js';
 import { CandidateGit } from './candidate-git.js';
 import { readProjectHandoff } from './project-handoff.js';
 import { runQuiescent } from './run-quiescence.js';
@@ -50,17 +50,9 @@ export class CandidatePromotionRepository {
   /** Keep one lease across preparation, native human interaction and final application. Dead
    * promotion leases can be reclaimed by process incarnation, never by age or guessed PID. */
   static async withLease<T>(data:string,repo:string,inspect:ArtifactInspection,action:(r:CandidatePromotionRepository)=>Promise<T>,fault?:Options['fault'],options:{readonly retainLeaseOnFailure?:boolean}={}):Promise<T>{
-    const manager=new LockManager(data,`candidate-promotion-${randomUUID()}`,`promotion-${randomUUID()}`);let lock:LockHandle;
-    try{lock=manager.acquireWorkspace(repo)}catch(error){
-      if((error as {code?:string}).code!=='WORKSPACE_LOCK_UNAVAILABLE')throw error;
-      const path=join(manager.root,'workspaces',`${manager.workspaceIdentity(repo).workspaceHash}.lock`),stat=lstatSync(path);
-      if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>16384)throw error;
-      const prior=JSON.parse(readFileSync(path).toString('utf8')) as LockRecord;manager.reclaimProjectWorkspace(repo,prior);lock=manager.acquireWorkspace(repo);
-    }
-    let completed=false;
-    try{const result=await action(CandidatePromotionRepository.open(data,repo,inspect,{create:true,manager,workspaceLock:lock,fault})!);completed=true;return result}
-    finally{if(completed||options.retainLeaseOnFailure!==true)manager.release(lock)}
+    return withProjectWorkspaceLease(data,repo,(manager,lock)=>action(CandidatePromotionRepository.open(data,repo,inspect,{create:true,manager,workspaceLock:lock,fault})!),options);
   }
+
   #assertActive():void{if(this.#retired)promotionError('PROMOTION_REPOSITORY_RETIRED')}
   /** Retires this host instance only after its async work and pending effects are quiescent. */
   retireForProjectTransfer():void{this.#write(()=>{if(this.#preparing||this.#pending().length)promotionError('PROMOTION_NOT_QUIESCENT');this.#retired=true})}

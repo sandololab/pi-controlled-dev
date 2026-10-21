@@ -14,10 +14,11 @@ import { verifyTerminalProof } from './pi-subagents-rpc.js';
 import { verifyTerminalCompletionPackage } from './completion-package.js';
 import type { LockManager, WorkflowLocks } from './lock-manager.js';
 import { CHANNEL_V2_MEDIA, checkPresentationChannel } from './gate-presentation.js';
-import { createVerifiedStoreCache, VerifiedStoreCacheError } from './verified-store-cache.js';
+import { createVerifiedStoreCache, acquiredFileDigest, VerifiedStoreCacheError } from './verified-store-cache.js';
+import type { StoreReadDiagnostic } from './verified-store-cache.js';
 
-export class StoreError extends Error { constructor(readonly code:string){super(code)} }
-function fail(code:string):never{throw new StoreError(code)}
+export class StoreError extends Error { constructor(readonly code:string,readonly diagnostic?:StoreReadDiagnostic){super(code)} }
+function fail(code:string,diagnostic?:StoreReadDiagnostic):never{throw new StoreError(code,diagnostic)}
 const parseJson=(value:string|Uint8Array)=>parseLimitedJson(value,64*1024*1024);
 const bytes=(value:string|Uint8Array):Uint8Array=>typeof value==='string'?Buffer.from(value,'utf8'):value;
 const same=(a:unknown,b:unknown)=>canonicalize(a)===canonicalize(b);
@@ -200,7 +201,7 @@ export class DurableStore {
   /** Complete prefix only; an unterminated final line is preserved and never applied.
    * Snapshot lag is an error here: replay belongs to the separately authorized recovery phase. */
   static load(root:string):StoredLedger{
-    try{return cachedLoad(root)}catch(error){if(error instanceof VerifiedStoreCacheError)fail(error.code);throw error}
+    try{return cachedLoad(root)}catch(error){if(error instanceof VerifiedStoreCacheError)fail(error.code,error.diagnostic);throw error}
   }
   /** Read-only verified WAL prefix for PST-002. Never uses the load cache and never
    * certifies a previous fsync or authorizes repair. */
@@ -319,7 +320,7 @@ function artifactPath(root:string,ref:ArtifactRef):string{
 function readArtifact(root:string,ref:ArtifactRef,reader?:LedgerReader):Uint8Array{
   if(!validateStructure('ArtifactRef',ref).ok||ref.relativeStorePath!==`artifacts/${ref.id}`)fail('STORE_ARTIFACT_PATH');
   const raw=reader?reader(join(root,ref.relativeStorePath)):readRegular(artifactPath(root,ref));
-  if(raw.byteLength!==ref.bytes||hashBytes(raw)!==ref.digest)fail('STORE_ARTIFACT_INTEGRITY');return raw;
+  if(raw.byteLength!==ref.bytes||(reader?acquiredFileDigest(reader,join(root,ref.relativeStorePath))??hashBytes(raw):hashBytes(raw))!==ref.digest)fail('STORE_ARTIFACT_INTEGRITY');return raw;
 }
 function regular(path:string):void{
   const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1)fail('STORE_FILE_ALIAS');

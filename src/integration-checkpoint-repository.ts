@@ -18,7 +18,7 @@ import { CandidateGit } from './candidate-git.js';
 import { CandidatePromotionRepository } from './candidate-promotion-repository.js';
 import { ProjectPlanningRepository } from './project-planning-repository.js';
 import { workspaceManifest, trackedWorkspaceManifest } from './scope-guard.js';
-import { collectValidationEvidence } from './validation-runner.js';
+import { collectValidationEvidenceAsync } from './validation-runner.js';
 import type { ExecutableScenario } from './scenario-management.js';
 import type { ControlledReviewerRunner } from './controlled-reviewer.js';
 import { selectProjectMemory, prepareMemoryContext } from './project-memory-context.js';
@@ -110,7 +110,7 @@ export class IntegrationCheckpointRepository {
         const scenario=e.scenarioHash?d.scenarios.find(s=>s.scenarioHash===e.scenarioHash&&s.version===e.scenarioVersion):undefined;
         if(e.result.taskId!==(e.scenarioHash?scenario?.taskId:v.checkpointRunId)||proof.cwd!==this.worktree(v)||proof.candidateGeneration!==0
           ||proof.startedAt!==e.result.startedAt||proof.endedAt!==e.result.endedAt
-          ||proof.source!=='node-spawnSync'||proof.commandHash!==e.commandHash||proof.specHash!==d.contentDigest||proof.taskId!==e.result.taskId
+          ||!['node-spawnSync','node-spawn'].includes(proof.source)||proof.commandHash!==e.commandHash||proof.specHash!==d.contentDigest||proof.taskId!==e.result.taskId
           ||proof.candidateDigest!==e.result.candidateDigest||proof.postCandidateDigest!==e.result.candidateDigest||proof.logDigest!==log.digest
           ||!Number.isSafeInteger(proof.pid)||proof.pid<=0||proof.exitCode!==0||proof.signal!==null||proof.timedOut)checkpointError('CHECKPOINT_VALIDATION_BINDING');
       }
@@ -250,10 +250,10 @@ export class IntegrationCheckpointRepository {
       const selection=this.#memory(d,'Scout',`planning-${run.checkpointRunId}`,files);
       if(selection){const context=prepareMemoryContext(selection,this.store);append(context.contextRef);append(this.#put(`checkpoint-planning-context-${run.checkpointRunId}`,{schemaVersion:1,checkpointRunId:run.checkpointRunId,baseline:b,
         purpose:'validation planning and scenario selection',contextRef:context.contextRef,contextDigest:selection.digest,delivery:'HOST_CONSUMED'}))}
-      const execute=(command:TaskSpec['validationCommands'][number],scenario?:ExecutableScenario)=>{
+      const execute=async(command:TaskSpec['validationCommands'][number],scenario?:ExecutableScenario)=>{
         const commandIntent=this.#put(`checkpoint-command-intent-${randomUUID()}`,{schemaVersion:1,kind:'checkpoint-command-intent',checkpointRunId:run.checkpointRunId,baseline:b,definitionRef:run.definitionRef,commandHash:hashCanonical(command),scenarioHash:scenario?.scenarioHash??null});
         run={...run,evidenceRefs:[...run.evidenceRefs,commandIntent]};this.#save(run);
-        const result=collectValidationEvidence(command,this.store,{taskId:scenario?.taskId??run.checkpointRunId,specHash:d.contentDigest,
+        const result=await collectValidationEvidenceAsync(command,this.store,{taskId:scenario?.taskId??run.checkpointRunId,specHash:d.contentDigest,
           candidate:{root:work,baseCommit:b.commit,digest,generation:0},trackedBaseline:true,criteria:scenario?this.#task(scenario.taskId).spec.acceptanceCriteria:criteria,createdAt:run.startedAt,...(scenario?{scenario}:{})});
         const envelope={schemaVersion:1,kind:'checkpoint-validation',checkpointRunId:run.checkpointRunId,definitionRef:run.definitionRef,baseline:b,
           commandIntentRef:commandIntent,commandHash:hashCanonical(command),scenarioHash:scenario?.scenarioHash??null,scenarioVersion:scenario?.version??null,result:result.result,artifacts:result.artifacts};
@@ -265,9 +265,9 @@ export class IntegrationCheckpointRepository {
       };
       const assertCanaries=()=>{this.git.assertDetachedBaseline(work,b.commit);if(!primaryCanary.verify())checkpointError('CHECKPOINT_PRIMARY_CHANGED');if(hashCanonical(trackedWorkspaceManifest(work,b.commit))!==digest)checkpointError('CHECKPOINT_BASELINE_CHANGED')};
       const statuses:ValidationResult['status'][]=[];
-      for(const command of d.commands){const result=execute(command);if(command.required)statuses.push(result.status)}
+      for(const command of d.commands){const result=await execute(command);if(command.required)statuses.push(result.status)}
       run={...run,phase:'VALIDATIONS'};this.#save(run);this.options.fault?.('afterValidation');
-      for(const scenario of d.scenarios){const command=d.commands.find(c=>c.id===scenario.execution.commandId)!;statuses.push(execute(command,scenario).status)}
+      for(const scenario of d.scenarios){const command=d.commands.find(c=>c.id===scenario.execution.commandId)!;statuses.push((await execute(command,scenario)).status)}
       run={...run,phase:'SCENARIOS'};this.#save(run);this.options.fault?.('afterScenario');
       if(statuses.some(status=>!['PASSED','FAILED'].includes(status)))return finish('BLOCKED',"A check or its execution evidence is incomplete.");
       if(d.reviewRequired){

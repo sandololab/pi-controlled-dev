@@ -207,6 +207,29 @@ test('close without an active task seals personal changes and retains an uncerta
  const workspaceHash=api.hashBytes(Buffer.from(uncertain.moved));assert.equal(existsSync(join(uncertain.newData,'controlled-dev','locks','workspaces',workspaceHash+'.lock')),true,'Uncertain ownership stays recorded for explicit reconciliation');
 });
 
+test('dirty source shutdown disposes runtime roles without acquiring or retaining a new host lease',async t=>{
+ const f=await fixture(t),previous=process.env.PI_CODING_AGENT_DIR;
+ process.env.PI_CODING_AGENT_DIR=f.newData;
+ t.after(()=>{if(previous===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=previous});
+ const pointer=readFileSync(join(f.moved,'.controlled-dev','handoff.json'));
+ writeFileSync(join(f.moved,'file.txt'),'operator work must survive\n');
+ const {LockManager}=await import('../src/lock-manager.ts');let acquisitions=0;
+ t.mock.method(LockManager.prototype,'acquireWorkspace',()=>{acquisitions++;throw new Error('UNEXPECTED_SHUTDOWN_LEASE')});
+ const hooks=new Map(),disposed=[];
+ const {default:extension}=await import('../extensions/controlled-dev.ts');
+ extension({registerCommand(){},getAllTools:()=>[],setActiveTools(){},events:{on(){return()=>{}},emit(name,request){
+  if(name==='pi-subagents:runtime-agent-register:v1')request.result={ok:true,registration:{dispose(){disposed.push(request.name)}}};
+ }},on(name,fn){hooks.set(name,fn);return()=>{}}});
+ const ctx={...channel('shutdown-native'),cwd:f.moved};
+ await hooks.get('session_start')({},ctx);
+ await assert.rejects(()=>hooks.get('session_shutdown')({},ctx),/GIT_TARGET_DIRTY/);
+ assert.equal(acquisitions,0,'Known dirty source must fail before reserving a host lease');
+ assert.deepEqual(disposed.sort(),['controlled.developer','controlled.oracle','controlled.reviewer','controlled.scout']);
+ assert.deepEqual(readFileSync(join(f.moved,'.controlled-dev','handoff.json')),pointer);
+ assert.deepEqual(DurableStore.load(f.taskRoot).state,f.original.state);
+ assert.equal(readFileSync(join(f.moved,'file.txt'),'utf8'),'operator work must survive\n');
+});
+
 test('a genuine host handoff manifest above one MiB restores with exact references while small-document limits stay strict',async t=>{
  const f=await fixture(t,{largeHuman:true}),seal=h.readProjectHandoff(f.moved),sealPath=join(f.moved,'.controlled-dev','handoffs',seal.descriptorDigest+'.json'),sealRaw=readFileSync(sealPath);
  assert.ok(sealRaw.byteLength>1024*1024);assert.ok(sealRaw.byteLength<64*1024*1024);assert.ok(seal.namespaceManifest.length>=1500);
@@ -290,4 +313,13 @@ test('real pre-WAL legacy staging preserves six orphans, verifies the dead pair,
  const next=im.prepareProjectRuntimeImport(f.newData,f.moved,'task','fresh-native',()=> 'ACCEPT'),request=im.projectRuntimeImportRequest(next),receipt=await presentTrustedConfirmation(channel('fresh-native'),request),cap=im.authorizeProjectRuntimeImport(next,receipt);t.after(()=>{try{const l=im.projectRuntimeImportLease(cap);l.manager.releaseAll(l.locks)}catch{}});
  const o=CentralOrchestrator.restore(takeOverImportedWorkflow(cap),{});im.completeProjectRuntimeImport(cap);assert.equal(o.state.revision,f.original.state.revision+1);assert.equal(o.state.repoRoot,f.moved);assert.deepEqual(o.state.counters,f.original.state.counters);
  assert.notEqual(DurableStore.load(f.taskRoot).events.at(-1).stateAfter.id,'state-r1');for(const [id,raw] of originals)assert.deepEqual(readFileSync(join(f.taskRoot,'artifacts',id)),raw);
+});
+
+test('exact held checkpoint releases its saved data without rebuilding task views or granting an old writer',async t=>{
+ const f=await fixture(t,{release:false}),prior=process.env.PI_CODING_AGENT_DIR;process.env.PI_CODING_AGENT_DIR=f.newData;t.after(()=>prior===undefined?delete process.env.PI_CODING_AGENT_DIR:process.env.PI_CODING_AGENT_DIR=prior);
+ const {releaseProductionProjectStorage}=await import('../src/production-bridge.ts');
+ const namespace=api.canonicalize(h.projectHandoffNamespaceManifest(f.moved)),before=DurableStore.load(f.taskRoot);
+ await releaseProductionProjectStorage({cwd:f.moved});
+ assert.equal(h.readProjectHandoff(f.moved).ownerDisposition,'RELEASED_FOR_TRANSFER');assert.equal(api.canonicalize(h.projectHandoffNamespaceManifest(f.moved)),namespace);assert.deepEqual(DurableStore.load(f.taskRoot),before);
+ const proposal=im.prepareProjectRuntimeImport(f.newData,f.moved,'task','new-native',()=> 'ACCEPT');assert.deepEqual(proposal.payload.sourceStateDigest,api.hashCanonical(before.state));
 });

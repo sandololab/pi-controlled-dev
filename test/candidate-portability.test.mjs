@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,unlinkSync,rmSync,cpSync,symlinkSync,existsSync,renameSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,unlinkSync,rmSync,cpSync,symlinkSync,existsSync,renameSync,readdirSync,statSync,utimesSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
@@ -27,7 +27,7 @@ test('copied project restores exact partial candidate on another host without co
  assert.throws(()=>git(root,'symbolic-ref','--quiet','HEAD'));assert.deepEqual(readFileSync(join(snapshot,'manifest.json')),raw);assert.equal(hashCanonical(workspaceManifest(f.work,f.base)),f.digest);assert.ok(readFileSync(join(root,'.git'),'utf8').includes(join(copy,'.git')));
 });
 test('snapshot corruption and changed manifest are rejected before creating a restored worktree',t=>{
- const f=fixture(t);f.helper.captureCandidateSnapshot(f.work,f.manifest,f.snapshot);const entry=f.manifest.entries.find(e=>e.path==='new.bin');writeFileSync(join(f.snapshot,'objects',entry.contentHash),'corrupted');const root=join(f.data,'bad-restore');assert.throws(()=>f.helper.restoreCandidateSnapshot(f.snapshot,root,f.ref,f.manifest),/GIT_SNAPSHOT_DIGEST_MISMATCH/);assert.equal(existsSync(root),false);assert.equal(f.helper.refHead(f.ref),f.base);
+ const f=fixture(t);f.helper.captureCandidateSnapshot(f.work,f.manifest,f.snapshot);const entry=f.manifest.entries.find(e=>e.path==='new.bin');writeFileSync(join(dirname(dirname(f.snapshot)),'.objects',entry.contentHash),'corrupted');const root=join(f.data,'bad-restore');assert.throws(()=>f.helper.restoreCandidateSnapshot(f.snapshot,root,f.ref,f.manifest),/GIT_SNAPSHOT_DIGEST_MISMATCH/);assert.equal(existsSync(root),false);assert.equal(f.helper.refHead(f.ref),f.base);
 });
 test('checkpoint refuses source changes, symlink custodian boundaries and restoring over an existing worktree',t=>{
  const f=fixture(t);writeFileSync(join(f.work,'keep.txt'),'concurrent');assert.throws(()=>f.helper.captureCandidateSnapshot(f.work,f.manifest,f.snapshot),/GIT_CANDIDATE_CHANGED/);assert.equal(existsSync(f.snapshot),false);
@@ -111,4 +111,52 @@ test('handoff stages a real candidate before marker publication, preserves ledge
  const human=rebuildHumanView(copiedTask,{machineDataRoot:newData});assert.equal(human.status,'CURRENT');assert.equal(human.vaultRoot,join(copy,'Documentazione'));
  assert.ok(human.files.some(file=>file.startsWith('Tasks/')&&existsSync(join(human.vaultRoot,file))));assert.deepEqual(DurableStore.load(copiedTask),ledger);
  assert.equal(existsSync(join(newData,'controlled-dev','projects',projectId)),false);
+});
+
+function legacySnapshot(f){
+ mkdirSync(join(f.snapshot,'objects'),{recursive:true});
+ for(const entry of f.manifest.entries)writeFileSync(join(f.snapshot,'objects',entry.contentHash),readFileSync(join(f.work,entry.path)));
+ writeFileSync(join(f.snapshot,'manifest.json'),canonicalize(f.manifest));
+}
+test('new snapshots share immutable payloads across candidates and restore without rewriting identical baseline files',t=>{
+ const f=fixture(t);f.helper.captureCandidateSnapshot(f.work,f.manifest,f.snapshot);
+ const objects=join(dirname(dirname(f.snapshot)),'.objects'),first=new Set(f.manifest.entries.map(e=>e.contentHash));
+ assert.deepEqual(new Set(readdirSync(objects)),first);
+ writeFileSync(join(f.work,'keep.txt'),'second change\n');const next=workspaceManifest(f.work,f.base),second=join(dirname(f.snapshot),hashCanonical(next));
+ f.helper.captureCandidateSnapshot(f.work,next,second);
+ assert.equal(readdirSync(objects).length,new Set([...f.manifest.entries,...next.entries].map(e=>e.contentHash)).size);
+ assert.equal(existsSync(join(f.snapshot,'objects')),false);assert.equal(existsSync(join(second,'objects')),false);
+ const detached=f.helper.detached.bind(f.helper);t.mock.method(f.helper,'detached',(root,base)=>{detached(root,base);utimesSync(join(root,'script.sh'),new Date(0),new Date(0))});
+ const restored=join(f.data,'restore-shared');f.helper.restoreCandidateSnapshot(f.snapshot,restored,f.ref,f.manifest);
+ assert.equal(statSync(join(restored,'script.sh')).mtimeMs,0,'An identical baseline payload is not rewritten');
+ assert.equal(hashCanonical(workspaceManifest(restored,f.base)),f.digest);
+});
+test('legacy snapshot migration preserves logical bytes, tolerates a pause during cleanup, and resumes without another writer',async t=>{
+ const f=fixture(t);legacySnapshot(f);const manifest=readFileSync(join(f.snapshot,'manifest.json'));
+ f.helper.verifyCandidateSnapshot(f.snapshot,f.manifest);
+ let stop=false;
+ await assert.rejects(f.helper.shareSnapshotStorage(f.snapshot,f.manifest,async()=>{if(stop)throw Error('Synthetic pause')},p=>{if(p.phase==='cleanup'&&p.completed===1)stop=true}),/Synthetic pause/);
+ assert.equal(existsSync(join(f.snapshot,'storage.json')),true);
+ f.helper.verifyCandidateSnapshot(f.snapshot,f.manifest);
+ const restored=join(f.data,'restored-during-pause');f.helper.restoreCandidateSnapshot(f.snapshot,restored,f.ref,f.manifest);
+ assert.equal(hashCanonical(workspaceManifest(restored,f.base)),f.digest);
+ const completed=await f.helper.shareSnapshotStorage(f.snapshot,f.manifest,async()=>{});
+ assert.ok(completed.removedFiles>0);assert.equal(existsSync(join(f.snapshot,'objects')),false);
+ assert.deepEqual(readFileSync(join(f.snapshot,'manifest.json')),manifest);
+ assert.deepEqual(await f.helper.shareSnapshotStorage(f.snapshot,f.manifest,async()=>{}),{removedBytes:0,removedFiles:0});
+});
+test('a corrupt shared destination or aliased object directory never removes legacy evidence',async t=>{
+ for(const kind of ['corruption','alias']){
+  const f=fixture(t);legacySnapshot(f);const objects=join(dirname(dirname(f.snapshot)),'.objects'),before=readdirSync(join(f.snapshot,'objects'));
+  if(kind==='corruption'){mkdirSync(objects);const entry=f.manifest.entries.find(e=>e.path==='new.bin');writeFileSync(join(objects,entry.contentHash),'bad shared bytes')}
+  else{const outside=join(f.root,'outside-shared');mkdirSync(outside);symlinkSync(outside,objects)}
+  await assert.rejects(f.helper.shareSnapshotStorage(f.snapshot,f.manifest,async()=>{}),/GIT_SNAPSHOT_(DIGEST_MISMATCH|PATH_INVALID)/);
+  assert.deepEqual(readdirSync(join(f.snapshot,'objects')),before);assert.equal(existsSync(join(f.snapshot,'storage.json')),false);
+  f.helper.verifyCandidateSnapshot(f.snapshot,f.manifest);
+ }
+});
+test('shared storage does not accept a caller-selected path outside the project',t=>{
+ const f=fixture(t);f.helper.captureCandidateSnapshot(f.work,f.manifest,f.snapshot);
+ writeFileSync(join(f.snapshot,'storage.json'),JSON.stringify({schemaVersion:2,objects:'../../../../outside'})+'\n');
+ assert.throws(()=>f.helper.verifyCandidateSnapshot(f.snapshot,f.manifest),/GIT_SNAPSHOT_INVALID/);
 });

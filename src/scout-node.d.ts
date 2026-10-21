@@ -8,6 +8,7 @@ declare module 'node:fs' {
   export function mkdtempSync(prefix: string): string;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
+  export function rmdirSync(path: string): void;
   export function writeFileSync(path: string, data: string | Uint8Array): void;
   export function statSync(path: string): Stats;
   export function readdirSync(path: string): string[];

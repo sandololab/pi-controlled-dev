@@ -218,10 +218,24 @@ function exclude(repo:string):void {
   for(const line of ['/.controlled-dev/','/Documentazione/'])if(!raw.split('\n').includes(line))raw+=(raw.endsWith('\n')||!raw?'':'\n')+line+'\n';
   const temp=join(info,`.handoff-exclude-${randomUUID()}`),fd=openSync(temp,'wx',0o600);try{writeFileSync(fd,raw);fsyncSync(fd)}finally{closeSync(fd)}renameSync(temp,path);sync(info);
 }
-function localManifest(repo:string,projectId:string):HandoffFile[] {
-  const result:HandoffFile[]=[];
-  for(const prefix of [`.controlled-dev/state/controlled-dev/projects/${projectId}`,`.controlled-dev/control/${projectId}`,'.controlled-dev/candidates','Documentazione']){
-    const root=join(repo,prefix);for(const item of snapshot(root).files)result.push({...item,path:`${prefix}/${item.path}`});
+function localManifest(repo:string,projectId:string,candidatesOnly=false):HandoffFile[] {
+  const result:HandoffFile[]=[];let entries=0;
+  // Candidate history grows with completed tasks. Apply the byte ceiling to
+  // each task's retained copies, rather than stopping an entire project when
+  // several individually bounded tasks together exceed one task's allowance.
+  const prefixes=candidatesOnly?[]:[`.controlled-dev/state/controlled-dev/projects/${projectId}`,`.controlled-dev/control/${projectId}`,'Documentazione'];
+  const candidates=join(repo,'.controlled-dev','candidates');
+  if(existsSync(candidates)){
+    directory(candidates);
+    for(const taskId of readdirSync(candidates).sort()){
+      if(taskId!=='.objects'&&!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))fail('PROJECT_HANDOFF_PATH_INVALID');
+      directory(join(candidates,taskId));prefixes.push(`.controlled-dev/candidates/${taskId}`);
+    }
+  }
+  for(const prefix of prefixes){
+    const acquired=snapshot(join(repo,prefix));entries+=1+acquired.files.length+acquired.directories.length;
+    if(entries>MAX_FILES)fail('PROJECT_HANDOFF_LIMIT');
+    for(const item of acquired.files)result.push({...item,path:`${prefix}/${item.path}`});
   }return result.sort((a,b)=>a.path.localeCompare(b.path));
 }
 function publishSeal(repo:string,record:ProjectHandoff):void {
@@ -397,6 +411,9 @@ function checkedProjectHandoff(repoRoot:string,allowHumanChanges=false):RuntimeI
 export function readProjectHandoff(repoRoot:string):VerifiedProjectHandoff|undefined{return checkedProjectHandoff(repoRoot)?.record}
 /** Read-only host inventory; no seal, lease or execution permission is minted. */
 export function projectHandoffNamespaceManifest(repoRoot:string):readonly HandoffFile[]{const marker=readProjectCustodian(repoRoot);if(!marker)fail('PROJECT_HANDOFF_NOT_ADOPTED');protectedNamespaces(repoRoot);return Object.freeze(localManifest(repoRoot,marker.projectId))}
+/** Same bounded path/hash reader, scoped to candidate containers. Maintenance
+ * freshness need not repeatedly re-read unrelated task and document archives. */
+export function projectHandoffCandidateManifest(repoRoot:string):readonly HandoffFile[]{const marker=readProjectCustodian(repoRoot);if(!marker)fail('PROJECT_HANDOFF_NOT_ADOPTED');protectedNamespaces(repoRoot);return Object.freeze(localManifest(repoRoot,marker.projectId,true))}
 /** Import preparation may retain personal Markdown/Notes edits. All authoritative state,
  * control and candidate bytes still match the sealed checkpoint. The host must bind the
  * reported changes to a fresh native confirmation; this reader grants no authority. */

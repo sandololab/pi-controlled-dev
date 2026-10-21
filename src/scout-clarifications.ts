@@ -61,9 +61,13 @@ function narrative(a:ScoutClarificationAnswer):string{
 function checkedRequest(input:TrustedConfirmationRequest):ScoutClarificationAnswer{
   const a=checkedAnswer(input.payload);
   const content=`${narrative(a)}\n\nDecision to confirm: ANSWER\nSubject: ScoutClarification / ${a.scoutResultId}, revision ${a.workflowRevision}\nNo/Esc cancels: no decision recorded.`;
+  // Historical native receipts bind the original display bytes. Localization
+  // must not discard an already recorded answer or rewrite its evidence.
+  const legacy=`Chiarimento dell’analisi\n\nDomanda ${a.ambiguityIndex+1}\n${a.ambiguityText}\n\nLa tua risposta\n${a.answer}\n\nEffetto della risposta\n${a.impact==='SPEC_REVISION_REQUIRED'?'Serve una revisione dei requisiti o dell’ambito approvato.':'Il chiarimento si applica entro i requisiti e l’ambito già approvati.'}\n${a.impactReason}\n\nQuesta conferma registra soltanto la risposta. Le verifiche e le autorizzazioni allo sviluppo restano necessarie.\n\nDecisione da confermare: ANSWER\nOggetto: ScoutClarification / ${a.scoutResultId}, revisione ${a.workflowRevision}\nNo/Esc annulla: nessuna decisione registrata.`;
+  const exactPresentation=input.presentation.title==='Confirm the answer?'&&input.presentation.content===content
+    ||input.presentation.title==='Confermare la risposta?'&&input.presentation.content===legacy;
   if(input.purpose!=='scout-clarification'||input.subjectKind!=='ScoutClarification'||input.subjectId!==a.scoutResultId
-    ||input.subjectRevision!==a.workflowRevision||input.action!=='ANSWER'||input.presentation.title!=="Confirm the answer?"
-    ||input.presentation.content!==content)fail();
+    ||input.subjectRevision!==a.workflowRevision||input.action!=='ANSWER'||!exactPresentation)fail();
   return a;
 }
 /** Host classifies the effect before presenting it; this helper does not infer scope semantics.

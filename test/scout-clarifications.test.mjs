@@ -37,6 +37,25 @@ test('answer confirmation binds immutable Scout, exact index/text/spec and expli
   assert.equal(coverage(f.ctx,f.store).covered,false);commit(f,a);assert.equal(coverage(f.ctx,f.store).status,'COVERED');
   assert.equal(f.ctx.state.state,'ANALYZING');assert.equal(f.ctx.state.gates.length,0);assert.equal(f.ctx.state.counters.dispatches,1);
 });
+test('historical Italian answer evidence remains readable after localization without acquiring new confirmation authority',async()=>{
+  const f=setup(),saved=await answer(f),packet=JSON.parse(f.data.get(saved.confirmationRef.id).toString('utf8')),a=packet.request.payload;
+  const legacy=`Chiarimento dell’analisi\n\nDomanda ${a.ambiguityIndex+1}\n${a.ambiguityText}\n\nLa tua risposta\n${a.answer}\n\nEffetto della risposta\n${a.impact==='SPEC_REVISION_REQUIRED'?'Serve una revisione dei requisiti o dell’ambito approvato.':'Il chiarimento si applica entro i requisiti e l’ambito già approvati.'}\n${a.impactReason}\n\nQuesta conferma registra soltanto la risposta. Le verifiche e le autorizzazioni allo sviluppo restano necessarie.\n\nDecisione da confermare: ANSWER\nOggetto: ScoutClarification / ${a.scoutResultId}, revisione ${a.workflowRevision}\nNo/Esc annulla: nessuna decisione registrata.`;
+  // A synthetic old durable packet, not a live confirmation capability.
+  packet.request.presentation={title:'Confermare la risposta?',content:legacy};
+  packet.receipt.presentationDigest=hashCanonical(packet.request.presentation);packet.receipt.requestDigest=hashCanonical(packet.request);
+  const raw=Buffer.from(canonicalize(packet)),ref={...saved.confirmationRef,bytes:raw.byteLength,digest:hashBytes(raw)};
+  f.data.set(ref.id,raw);commit(f,{...saved,confirmationRef:ref});
+  assert.equal(coverage(f.ctx,f.store).status,'COVERED');
+  assert.match(delivery(f.ctx,f.store).text,/Conserva il formato documentato/);
+  assert.equal(f.ctx.state.state,'ANALYZING');assert.equal(f.ctx.state.gates.length,0);assert.equal(f.ctx.state.counters.dispatches,1);
+  assert.throws(()=>consume(packet.request,packet.receipt,()=>f.ctx,f.store),/RECEIPT_INVALID/);
+  assert.equal(create(f.ctx,0,'Current answer','WITHIN_APPROVED_SPEC','Reason').presentation.title,'Confirm the answer?');
+  packet.request.presentation.content=legacy.replace('registra soltanto la risposta','autorizza lo sviluppo');
+  packet.receipt.presentationDigest=hashCanonical(packet.request.presentation);packet.receipt.requestDigest=hashCanonical(packet.request);
+  const changed=Buffer.from(canonicalize(packet));f.data.set(ref.id,changed);
+  const record=f.ctx.records.find(r=>r.id===ref.id);record.value={...ref,bytes:changed.byteLength,digest:hashBytes(changed)};
+  assert.equal(coverage(f.ctx,f.store).status,'INVALID_EVIDENCE');
+});
 test('answers that change requirements or scope require a new approved spec, never merely cover the ambiguity',async()=>{
   const f=setup(),a=await answer(f,0,'SPEC_REVISION_REQUIRED','Cambiare il formato pubblico.');commit(f,a);
   assert.equal(coverage(f.ctx,f.store).status,'SPEC_REVISION_REQUIRED');assert.equal(coverage(f.ctx,f.store).covered,false);

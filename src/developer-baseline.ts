@@ -1,3 +1,5 @@
+import type { HostCommandOptions } from './host-command.js';
+import type { ValidationBinding } from './validation-runner.js';
 import { Buffer } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -7,7 +9,7 @@ import type { ArtifactRef, AssignmentEnvelope, ContextRecord, TaskSpec, Validati
 import type { DurableStore } from './store.js';
 import { inventoryHash, inventoryTree } from './controlled-agent-runtime.js';
 import { workspaceManifest } from './scope-guard.js';
-import { collectValidationEvidence } from './validation-runner.js';
+import { collectValidationEvidence, collectValidationEvidenceAsync } from './validation-runner.js';
 import { hostValidationRecipeName } from './validation-proposals.js';
 
 const acquired=new WeakMap<object,{readonly commandsHash:string;readonly reader:Pick<DurableStore,'read'>;readonly artifacts:readonly ArtifactRef[];readonly text:string;readonly workInventory:string;readonly passed:boolean;readonly complete:boolean}>();
@@ -38,8 +40,19 @@ function readiness(command:TaskSpec['validationCommands'][number],root:string):s
 }
 /** Caller holds the workflow lease and has opened ScopeGuard on this exact root.
  * These are PRE_IMPLEMENTATION observations, never current-candidate validation. */
-export function captureDeveloperBaseline(spec:TaskSpec,state:WorkflowState,workRoot:string,store:DurableStore,options:{readonly baseCommit?:string}={}):{
- readonly evidence:DeveloperBaselineEvidence;readonly artifacts:readonly ArtifactRef[];readonly passed:boolean;readonly complete:boolean}{
+export interface BaselineCapture {readonly evidence:DeveloperBaselineEvidence;readonly artifacts:readonly ArtifactRef[];readonly passed:boolean;readonly complete:boolean}
+type BaselineOptions={readonly baseCommit?:string};
+type BaselineStep={readonly command:TaskSpec['validationCommands'][number];readonly binding:ValidationBinding};
+export function captureDeveloperBaseline(spec:TaskSpec,state:WorkflowState,workRoot:string,store:DurableStore,options:BaselineOptions={}):BaselineCapture {
+ const steps=acquireBaseline(spec,state,workRoot,store,options);let step=steps.next();
+ while(!step.done)step=steps.next(collectValidationEvidence(step.value.command,store,step.value.binding));return step.value;
+}
+export async function captureDeveloperBaselineAsync(spec:TaskSpec,state:WorkflowState,workRoot:string,store:DurableStore,options:BaselineOptions & HostCommandOptions={}):Promise<BaselineCapture> {
+ const steps=acquireBaseline(spec,state,workRoot,store,options);let step=steps.next();
+ while(!step.done)step=steps.next(await collectValidationEvidenceAsync(step.value.command,store,step.value.binding,options));return step.value;
+}
+/** One acquisition algorithm for compatibility callers and supervised production. */
+function* acquireBaseline(spec:TaskSpec,state:WorkflowState,workRoot:string,store:DurableStore,options:BaselineOptions):Generator<BaselineStep,BaselineCapture,ReturnType<typeof collectValidationEvidence>> {
  const baseCommit=options.baseCommit??state.baselineCommit;
  if(!baseCommit||spec.taskId!==state.taskId||spec.specHash!==state.specHash||hashContract('TaskSpec',spec)!==spec.specHash
   ||canonicalize(spec)!==Buffer.from(store.read(state.spec)).toString('utf8')||workRoot===state.repoRoot||realpathSync(workRoot)!==workRoot||git(workRoot,'rev-parse','HEAD')!==baseCommit)fail();
@@ -48,7 +61,7 @@ export function captureDeveloperBaseline(spec:TaskSpec,state:WorkflowState,workR
  for(const command of spec.validationCommands.filter(c=>c.required)){
   const deferred=readiness(command,workRoot);
   if(deferred){checks.push({commandId:command.id,commandHash:hashCanonical(command),status:'DEFERRED',reason:deferred});continue}
-  const observed=collectValidationEvidence(command,store,{taskId:spec.taskId,specHash:spec.specHash,candidate:{root:workRoot,baseCommit,digest:manifestDigest,generation:0},criteria:spec.acceptanceCriteria,createdAt:state.createdAt});
+  const observed=yield {command,binding:{taskId:spec.taskId,specHash:spec.specHash,candidate:{root:workRoot,baseCommit,digest:manifestDigest,generation:0},criteria:spec.acceptanceCriteria,createdAt:state.createdAt}};
   artifacts.push(...observed.artifacts);
   const resultRef=store.put(`pre-${observed.result.id}`,canonicalize(observed.result),'application/vnd.pi-controlled-dev.pre-implementation-result+json');artifacts.push(resultRef);
   checks.push({commandId:command.id,commandHash:hashCanonical(command),status:observed.result.status,resultRef,logRef:observed.result.logRef,processProofRef:observed.result.processProofRef,...(observed.result.exitCode!==undefined?{exitCode:observed.result.exitCode}:{})});
@@ -120,7 +133,7 @@ export function createReviewerBaselineContext(spec:TaskSpec,state:WorkflowState,
   if(!validateStructure('ValidationResult',pre).ok||pre.taskId!==state.taskId||pre.specHash!==spec.specHash||pre.commandId!==command.id
    ||pre.commandHash!==c.commandHash||pre.status!==c.status||pre.candidateDigest!==p.manifestDigest||pre.candidateGeneration!==0
    ||pre.logRef!==c.logRef||pre.processProofRef!==c.processProofRef||pre.exitCode!==c.exitCode
-   ||proof.schemaVersion!==1||proof.source!=='node-spawnSync'||proof.taskId!==state.taskId||proof.specHash!==spec.specHash
+   ||proof.schemaVersion!==1||!['node-spawnSync','node-spawn'].includes(proof.source)||proof.taskId!==state.taskId||proof.specHash!==spec.specHash
    ||proof.commandHash!==c.commandHash||proof.cwd!==p.workRoot||proof.candidateDigest!==p.manifestDigest||proof.postCandidateDigest!==p.manifestDigest
    ||proof.candidateGeneration!==0||!Number.isSafeInteger(proof.pid)||proof.pid<=0||proof.timedOut||proof.signal!==null
    ||proof.exitCode!==c.exitCode||proof.logDigest!==hashBytes(Buffer.from(log))||pre.startedAt!==proof.startedAt||pre.endedAt!==proof.endedAt

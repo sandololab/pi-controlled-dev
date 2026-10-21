@@ -22,7 +22,7 @@ import { canonicalize, hashCanonical, launchContractHash, validateContract, vali
 import type { AssignmentEnvelope, CandidateManifest, ControlledLaunchContract, Criterion, ReviewResult, Risk,
   TaskSpec, ValidationContext, ValidationResult, WorkflowState } from './contracts.js';
 import { RpcAdapter } from './pi-subagents-rpc.js';
-import { workspacePatch } from './scope-guard.js';
+import { workspacePatchFromManifests } from './scope-guard.js';
 import type { RuntimeComparison } from './runtime-observability.js';
 import { assertCurrentScenarioRun, validateExecutableScenario, validateScenarioRun, validateTechnicalEvidenceBundle } from './scenario-management.js';
 import type { ExecutableScenario, ScenarioRun, TechnicalEvidenceBundle } from './scenario-management.js';
@@ -106,7 +106,7 @@ export function registerControlledReviewer(pi: EventPi, runtimeGeneration?: stri
     : registerRuntimeAgent(pi, CONTROLLED_REVIEWER_NAME, REVIEWER_RUNTIME_DEFINITION, runtimeGeneration);
 }
 export class ControlledReviewerError extends ControlledRuntimeError {
- constructor(code:string,readonly dispatchOutcome?:'NOT_SENT'|'UNKNOWN'|'REPLIED'){super(code)}
+ constructor(code:string,readonly dispatchOutcome?:'NOT_SENT'|'UNKNOWN'|'REPLIED',readonly diagnostic?:Readonly<{phase:string;path:string}>){super(code)}
 }
 const acquiredNoDispatchProofs=new WeakSet<object>();
 export function isAcquiredReviewerNoDispatchProof(proof:ReviewerNoDispatchProof):boolean{return acquiredNoDispatchProofs.has(proof)}
@@ -179,7 +179,7 @@ export class ControlledReviewerRunner {
           ownerSessionId:this.ownerSessionId,runtimeGeneration:this.runtimeGeneration,launchContractHash:a.launchContractHash,
           candidateDigest:a.candidateDigest!,candidateGeneration:a.candidateGeneration!,code:error.code,observedAt:new Date().toISOString()});
         acquiredNoDispatchProofs.add(proof);options.onNoDispatchProof?.(proof);
-        throw new ControlledReviewerError(error.code,'NOT_SENT');
+        throw new ControlledReviewerError(error.code,'NOT_SENT',error.diagnostic);
       }
       throw error;
     }
@@ -294,60 +294,86 @@ function bindReviewerRun(context: ValidationContext, assignment: AssignmentEnvel
   const value={...state,runs:[...state.runs.filter(run=>run!==template),reviewerRun]};
   return Object.freeze({...context,records:context.records.map(record=>record===stateRecord?{id:record.id,kind:'WorkflowState' as const,value}:record)});
 }
-function validateReviewPacket(input: unknown, assignment: AssignmentEnvelope, context: ValidationContext, manifest: CandidateManifest,
-  workspace: ReviewWorkspace): ReviewPacket {
+/** Data-only admission before reserving an agent attempt. The live runner still
+ * independently verifies workspace bytes and launch authority before spawning. */
+export function verifyPreparedReviewPacket(input:unknown,assignment:AssignmentEnvelope,context:ValidationContext,manifest:CandidateManifest,workspace:{readonly diff:string;readonly changedFiles:readonly string[]}):void {
+  validateReviewPacket(input,assignment,context,manifest,workspace);
+}
+function validateReviewPacket(input:unknown,assignment:AssignmentEnvelope,context:ValidationContext,manifest:CandidateManifest,workspace:Pick<ReviewWorkspace,'diff'|'changedFiles'>):ReviewPacket {
+  try{return checkReviewPacket(input,assignment,context,manifest,workspace)}catch(error){
+    if(error instanceof ControlledReviewerError)throw error;
+    throw new ControlledReviewerError('INVALID_REVIEW_PACKET',undefined,Object.freeze({phase:'REVIEW_PACKET',path:'packet.structure'}));
+  }
+}
+function checkReviewPacket(input: unknown, assignment: AssignmentEnvelope, context: ValidationContext, manifest: CandidateManifest,
+  workspace: Pick<ReviewWorkspace,'diff'|'changedFiles'>): ReviewPacket {
+  const reject:(path:string)=>never=(path)=>{throw new ControlledReviewerError('INVALID_REVIEW_PACKET',undefined,Object.freeze({phase:'REVIEW_PACKET',path}))};
+  const check=(ok:unknown,path:string):void=>{if(!ok)reject(path)};
   let value: any;
-  try { const encoded=canonicalize(input); if (encoded.length > 4*1024*1024) throw new Error(); value=JSON.parse(encoded); }
-  catch { throw new ControlledReviewerError('INVALID_REVIEW_PACKET'); }
+  try { const encoded=canonicalize(input); if (Buffer.byteLength(encoded,'utf8') > 4*1024*1024) reject('packet.size'); value=JSON.parse(encoded); }
+  catch(error) { if(error instanceof ControlledReviewerError)throw error;reject('packet.json'); }
+  check(value && typeof value==='object' && !Array.isArray(value),'packet');
   const keys=['acceptanceCriteria','assignmentId','candidateDigest','candidateGeneration','candidateManifest','changedFiles','diff','evidenceRefs','handoff','requirements','residualRisks','schemaVersion','specHash','taskId','validationResults',
-    ...(value?.runtimeComparison!==undefined?['runtimeComparison']:[]),...(value?.scenarioEvidence!==undefined?['scenarioEvidence']:[])].sort();
-  if (!value || typeof value!=='object' || Array.isArray(value) || Object.keys(value).sort().join(',')!==keys.join(',') || value.schemaVersion!==1
-    || value.taskId!==assignment.taskId || value.assignmentId!==assignment.assignmentId || value.specHash!==assignment.specHash
-    || value.candidateDigest!==assignment.candidateDigest || value.candidateGeneration!==assignment.candidateGeneration
-    || canonicalize(value.requirements)!==canonicalize(assignment.requirements) || canonicalize(value.acceptanceCriteria)!==canonicalize(assignment.acceptanceCriteria)
-    || typeof value.diff!=='string' || value.diff!==workspace.diff || typeof value.handoff!=='string' || !value.handoff
-    || !Array.isArray(value.changedFiles) || canonicalize([...value.changedFiles].sort())!==canonicalize(workspace.changedFiles)
-    || canonicalize(value.candidateManifest)!==canonicalize(manifest) || !validateContract('CandidateManifest',value.candidateManifest).ok
-    || !Array.isArray(value.evidenceRefs) || new Set(value.evidenceRefs).size!==value.evidenceRefs.length
-    || value.evidenceRefs.some((id: unknown)=>typeof id!=='string' || !assignment.inputArtifactRefs.includes(id))
-    || !Array.isArray(value.residualRisks) || value.residualRisks.some((risk: unknown)=>!validateContract('Risk',risk,context).ok)
-    || !Array.isArray(value.validationResults) || value.validationResults.length!==context.currentValidationIds!.length
-    || new Set(value.validationResults.map((result:any)=>result?.id)).size!==value.validationResults.length)
-    throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+    ...(value.runtimeComparison!==undefined?['runtimeComparison']:[]),...(value.scenarioEvidence!==undefined?['scenarioEvidence']:[])].sort();
+  check(Object.keys(value).sort().join(',')===keys.join(','),'packet.fields');
+  check(value.schemaVersion===1,'schemaVersion');
+  for(const field of ['taskId','assignmentId','specHash','candidateDigest','candidateGeneration'] as const)check(value[field]===assignment[field],field);
+  check(canonicalize(value.requirements)===canonicalize(assignment.requirements),'requirements');
+  check(canonicalize(value.acceptanceCriteria)===canonicalize(assignment.acceptanceCriteria),'acceptanceCriteria');
+  check(typeof value.diff==='string' && value.diff===workspace.diff,'diff');
+  check(typeof value.handoff==='string' && !!value.handoff,'handoff');
+  check(Array.isArray(value.changedFiles) && canonicalize([...value.changedFiles].sort())===canonicalize(workspace.changedFiles),'changedFiles');
+  check(canonicalize(value.candidateManifest)===canonicalize(manifest) && validateContract('CandidateManifest',value.candidateManifest).ok,'candidateManifest');
+  check(Array.isArray(value.evidenceRefs) && new Set(value.evidenceRefs).size===value.evidenceRefs.length,'evidenceRefs');
+  check(!value.evidenceRefs.some((id:unknown)=>typeof id!=='string' || !assignment.inputArtifactRefs.includes(id)),'evidenceRefs.assignment');
+  check(Array.isArray(value.residualRisks) && !value.residualRisks.some((risk:unknown)=>!validateContract('Risk',risk,context).ok),'residualRisks');
+  check(Array.isArray(value.validationResults) && value.validationResults.length===context.currentValidationIds!.length,'validationResults');
+  check(new Set(value.validationResults.map((result:any)=>result?.id)).size===value.validationResults.length,'validationResults.identities');
   const state=context.records.find(record=>record.id===context.stateId&&record.kind==='WorkflowState')?.value as WorkflowState|undefined;
   const candidate=state?.candidate;
   if(!candidate||candidate.baseCommit!==assignment.baseCommit||candidate.digest!==value.candidateDigest||candidate.generation!==value.candidateGeneration)
-    throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+    reject('candidate');
   const required=[candidate.manifest,candidate.patch,candidate.handoff,candidate.terminalProof];
   const refs=[...value.evidenceRefs,...value.validationResults.flatMap((result:ValidationResult)=>[result.id,result.logRef,result.processProofRef])];
   for(const id of refs){
     const records=context.records.filter(record=>record.id===id);
-    if(records.length!==1||state!.invalidEvidenceIds.includes(id)||!validateContract(records[0].kind,records[0].value,context).ok)
-      throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+    if(records.length!==1)reject(`evidenceRefs.${id}.identity`);
+    if(state!.invalidEvidenceIds.includes(id))reject(`evidenceRefs.${id}.invalidated`);
+    const record=records[0];let referenceContext=context;
+    // Operator answers retain their accepted Scout result as evidence. Check it
+    // against the original Scout assignment, never the new Reviewer assignment.
+    if(record.kind==='ScoutResult'){
+      const source=context.records.filter(r=>r.id===record.value.assignmentId&&r.kind==='AssignmentEnvelope');
+      const run=state!.runs.find(r=>r.role==='Scout'&&r.assignmentId===record.value.assignmentId&&r.resultRef===id);
+      referenceContext={...context,assignmentId:record.value.assignmentId};
+      if(!state!.results.includes(id)||!run||run.status!=='TERMINAL'||!run.terminalProofRef||source.length!==1
+        ||!validateContract('AssignmentEnvelope',source[0].value,referenceContext).ok)reject(`evidenceRefs.${id}.contract`);
+    }
+    if(!validateContract(record.kind,record.value,referenceContext).ok)reject(`evidenceRefs.${id}.contract`);
   }
   for(const ref of required){
     const records=context.records.filter(record=>record.id===ref.id);
     if(!value.evidenceRefs.includes(ref.id)||records.length!==1||records[0].kind!=='ArtifactRef'||canonicalize(records[0].value)!==canonicalize(ref))
-      throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      reject('evidenceRefs.required');
   }
   for(const [ref,content] of [[candidate.manifest,canonicalize(value.candidateManifest)],[candidate.patch,value.diff],[candidate.handoff,value.handoff]] as const)
     if(ref.digest!==createHash('sha256').update(content).digest('hex')||ref.bytes!==Buffer.byteLength(content,'utf8'))
-      throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      reject('artifacts.content');
   for (const result of value.validationResults) {
     const checked=validateContract('ValidationResult',result,context);
     const record=checked.ok && context.records.find(r=>r.kind==='ValidationResult' && r.value.id===checked.value.id);
     if (!checked.ok || !record || !context.currentValidationIds!.includes(checked.value.id) || canonicalize(record.value)!==canonicalize(checked.value))
-      throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      reject('validationResults.record');
   }
   if(value.scenarioEvidence!==undefined){
     const evidence=value.scenarioEvidence;
     if(!evidence||Object.keys(evidence).sort().join(',')!=='bundles,runs,scenarios'||!Array.isArray(evidence.scenarios)||!Array.isArray(evidence.runs)||!Array.isArray(evidence.bundles)
       ||!evidence.scenarios.length||!evidence.runs.length||!evidence.bundles.length||evidence.scenarios.some((item:unknown)=>!validateExecutableScenario(item))
       ||evidence.runs.some((item:unknown)=>!validateScenarioRun(item))||evidence.bundles.some((item:unknown)=>!validateTechnicalEvidenceBundle(item)))
-      throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      reject('scenarioEvidence.structure');
     const currentIds=new Set(value.validationResults.map((item:ValidationResult)=>item.id)),criteria=new Set(value.acceptanceCriteria.map((item:Criterion)=>item.id));
     try{for(const run of evidence.runs as ScenarioRun[])assertCurrentScenarioRun(run,{digest:value.candidateDigest,generation:value.candidateGeneration})}
-    catch{throw new ControlledReviewerError('INVALID_REVIEW_PACKET')}
+    catch{reject('scenarioEvidence.generation')}
     if(evidence.runs.some((run:ScenarioRun)=>run.validationResultRefs.some(id=>!currentIds.has(id)))
       ||evidence.bundles.some((bundle:TechnicalEvidenceBundle)=>bundle.criterionEvidence.some(mapping=>!criteria.has(mapping.criterionId))
         ||bundle.validationResultRefs.some(id=>!currentIds.has(id)))
@@ -357,7 +383,7 @@ function validateReviewPacket(input: unknown, assignment: AssignmentEnvelope, co
         const artifactId=item.version!==undefined?`scenario-${item.scenarioHash.slice(0,24)}`:item.runId??item.bundleId;
         const record=context.records.find(r=>r.kind==='ArtifactRef'&&r.id===artifactId);
         return !record||!value.evidenceRefs.includes(record.id);
-      }))throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      }))reject('scenarioEvidence.references');
   }
   if(value.runtimeComparison!==undefined){
     const comparison=value.runtimeComparison as RuntimeComparison;
@@ -378,7 +404,7 @@ function validateReviewPacket(input: unknown, assignment: AssignmentEnvelope, co
       ||oldEvents.value.digest!==createHash('sha256').update(oldEventBytes).digest('hex')
       ||newEvents.value.digest!==createHash('sha256').update(newEventBytes).digest('hex')
       ||!value.evidenceRefs.includes(comparisonId)||ref?.kind!=='ArtifactRef'||ref.value.mediaType!=='application/vnd.pi-controlled-dev.runtime-comparison+json'
-      ||ref.value.digest!==hashCanonical(comparison))throw new ControlledReviewerError('INVALID_REVIEW_PACKET');
+      ||ref.value.digest!==hashCanonical(comparison))reject('runtimeComparison');
   }
   return Object.freeze(value) as ReviewPacket;
 }
@@ -433,7 +459,8 @@ function verifyReviewWorkspace(assignment: AssignmentEnvelope): ReviewWorkspace 
         sourceModes.set(path,meta[0]);
       }
     }
-    const originalInventory=inventoryTree(repo,['.git'],tracked),candidateInventory=inventoryTree(work,['.git']);
+    const originalCanary=inventoryTree(repo),included=new Set([...tracked].flatMap(path=>path.split('/').map((_,i,parts)=>parts.slice(0,i+1).join('/'))));
+    const originalInventory=new Map([...originalCanary].filter(([path])=>path==='.'||included.has(path))),candidateInventory=inventoryTree(work,['.git']);
     const changed=changedInventoryPaths(gitModeInventory(originalInventory,sourceModes),gitModeInventory(candidateInventory)).filter(path=>{
       if(path==='.')return false;
       const before=originalInventory.get(path),after=candidateInventory.get(path);
@@ -442,8 +469,8 @@ function verifyReviewWorkspace(assignment: AssignmentEnvelope): ReviewWorkspace 
       return !((before===undefined||before.startsWith('d\t'))&&(after===undefined||after.startsWith('d\t')));
     });
     if(changed.some(path=>path.startsWith('.git/')||!assignment.allowedPaths.includes(path)||assignment.deniedPaths.includes(path)))throw new Error();
-    return {originalHead,originalStatus,originalHash:inventoryHash(inventoryTree(repo)),candidateHash:inventoryHash(candidateInventory),
-      originalInventory,candidateInventory,changedFiles:Object.freeze(changed),diff:workspacePatch(repo,work)};
+    return {originalHead,originalStatus,originalHash:inventoryHash(originalCanary),candidateHash:inventoryHash(candidateInventory),
+      originalInventory,candidateInventory,changedFiles:Object.freeze(changed),diff:workspacePatchFromManifests(work,manifestFromInventory(assignment.baseCommit!,gitModeInventory(originalInventory,sourceModes)),manifestFromInventory(assignment.baseCommit!,candidateInventory))};
   } catch { throw new ControlledReviewerError('REVIEW_WORKSPACE_INVALID'); }
 }
 function manifestFromInventory(baseCommit:string, inventory:TreeInventory):CandidateManifest {

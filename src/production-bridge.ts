@@ -1,10 +1,13 @@
+import { runExecutionCounts } from './run-quiescence.js';
+import { inspectHostCommandRecovery } from './host-command-recovery.js';
+import { prepareCandidateStorageReduction, candidateStorageReductionRequest, applyCandidateStorageReduction } from './candidate-storage.js';
 import { prepareProjectRuntimeImport, projectRuntimeImportRequest, authorizeProjectRuntimeImport, completeProjectRuntimeImport, abortProjectRuntimeImport, prepareProjectRuntimeImportRecovery, projectRuntimeImportRecoveryRequest, recoverProjectRuntimeImport } from './project-runtime-import.js';
 import { takeOverImportedWorkflow } from './recovery-resume.js';
 import { setTimeout } from 'node:timers';
 import { resolveProjectStorage, assertProjectStoragePath, physicalProjectRootForTask } from './project-storage.js';
 import { presentTrustedConfirmation } from './trusted-confirmation.js';
 import { runQuiescent } from './run-quiescence.js';
-import { prepareProjectHandoff, prepareProjectHandoffRecovery, projectHandoffRequest, authorizeProjectHandoff, completeProjectHandoff, openHandoffReceiptStore, recoverProjectHandoff, currentProjectHandoffCandidatePaths, releaseProjectHandoff, readProjectHandoffForRuntimeImport } from './project-handoff.js';
+import { prepareProjectHandoff, prepareProjectHandoffRecovery, projectHandoffRequest, authorizeProjectHandoff, completeProjectHandoff, openHandoffReceiptStore, recoverProjectHandoff, currentProjectHandoffCandidatePaths, releaseProjectHandoff, readProjectHandoff, readProjectHandoffForRuntimeImport } from './project-handoff.js';
 import { humanVaultRoot, readProjectCustodian } from './project-custodian.js';
 import { captureCandidateCheckpointStaging, captureCandidateCheckpoint, verifyCandidateCheckpoint } from './candidate-checkpoints.js';
 import type { HumanGateRequest, TrustedHumanDecision } from './orchestrator.js';
@@ -26,7 +29,7 @@ import { CandidatePromotionRepository } from './candidate-promotion-repository.j
 import type { PlannedTaskSeed } from './project-planning-repository.js';
 import { ProjectMemoryRepository } from './project-memory-repository.js';
 import type { ControlledUI, StatusPages } from './controlled-ui.js';
-import { showStatus } from './controlled-ui.js';
+import { showStatus, withProgress } from './controlled-ui.js';
 import { taskWizard, wizardSummary } from './task-wizard.js';
 import type { ProposeTask } from './task-wizard.js';
 import { compileValidations } from './validation-proposals.js';
@@ -41,7 +44,7 @@ import type { ArtifactRef, InputSource, TaskSpec, ValidationContext } from './co
 import { freezeTaskSpec } from './task-spec.js';
 import { currentValidationEvidence } from './contract-semantic.js';
 import { DurableStore } from './store.js';
-import { LockManager, withLockMutation } from './lock-manager.js';
+import { LockManager, withLockMutation, withProjectWorkspaceLease } from './lock-manager.js';
 import { OrchestratorHost, presentHumanGate, confirmHumanDisplay } from './orchestrator.js';
 import type { CentralOrchestrator, HumanDecisionChoice } from './orchestrator.js';
 import { classifyResumeAction, takeOverWorkflow, reconcileUnknownChildren } from './recovery-resume.js';
@@ -128,12 +131,71 @@ export async function withProductionPromotion<T>(ctx:ProductionCommandContext,ac
     return result;
   });
 }
+let storagePause:{requested:boolean}|undefined;
+/** A UI interruption requests a cooperative pause; it never kills an in-flight write. */
+export function requestProductionStoragePause():boolean {
+  if(!storagePause)return false;storagePause.requested=true;return true;
+}
+/** Maintenance changes only verified snapshot containers, then publishes a fresh
+ * transfer seal. No task state, history, budget or role is replayed. */
+export async function reduceProductionProjectStorage(ctx:ProductionCommandContext):Promise<void>{
+  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(storagePause)throw new Error('CANDIDATE_STORAGE_BUSY');
+  const storage=resolveProjectStorage(configRoot(),realpathSync(ctx.cwd));
+  if(!storage.custodian)throw new Error('PROJECT_HANDOFF_NOT_ADOPTED');
+  const pause={requested:false};storagePause=pause;let label='Status: Checking saved copies before reducing storage';let steps=0;
+  try{await withProgress(ctx.ui,()=>label,async()=>{
+    await new Promise<void>(done=>setTimeout(done,0));
+    if(readProjectHandoffForRuntimeImport(storage.repoRoot)?.record.ownerDisposition!=='RELEASED_FOR_TRANSFER')throw new Error('CANDIDATE_STORAGE_CLOSE_REQUIRED');
+    return withProjectWorkspaceLease(configRoot(),storage.repoRoot,async(manager,workspaceLock)=>{
+    const owner=()=>{if(!manager.verifyWorkspaceLock(workspaceLock))throw new Error('PROJECT_HANDOFF_LEASE_LOST')};
+    const boundary=async()=>{owner();if(pause.requested)throw new Error('CANDIDATE_STORAGE_PAUSED');if(++steps%32===0)await new Promise<void>(done=>setTimeout(done,0))};
+    const quiescent=projectTaskQuiescenceCheck(join(storage.projectRoot,'tasks'));owner();quiescent();
+    const progress=(p:import('./candidate-git.js').SnapshotStorageProgress,index:number,total:number)=>{label=`Status: ${p.phase==='verify'?'Verifying saved files':p.phase==='share'?'Saving shared content':'Removing verified duplicate copies'} — saved copy ${index}/${total}, file ${p.completed}/${p.total}. Alt+I pauses after the current file.`};
+    let proposal:Awaited<ReturnType<typeof prepareCandidateStorageReduction>>;
+    try{proposal=await prepareCandidateStorageReduction(storage.repoRoot,configRoot(),boundary,progress)}catch(error){if((error as Error).message==='CANDIDATE_STORAGE_PAUSED'){ctx.ui.notify('Storage check paused. Saved copies are unchanged.','info');return}throw error}
+    if(!proposal.legacyFiles){ctx.ui.notify('Saved copies already share their content. No duplicate payload needs to be removed.','info');return}
+    label='Status: Review the proposed reduction in saved copies';
+    const receipt=await presentTrustedConfirmation(ctx,candidateStorageReductionRequest(proposal));
+    if(!receipt){ctx.ui.notify('Storage reduction cancelled. Saved copies are unchanged.','info');return}
+    label='Status: Rechecking the approved saved copies before cleanup';await new Promise<void>(done=>setTimeout(done,0));
+    // Open the existing receipt archive lazily, after native confirmation. Merely
+    // inspecting or cancelling must not create a project namespace or alter its seal.
+    let store:DurableStore|undefined;
+    const receiptStore={put:(id:string,content:string,mediaType:string)=>(store??=DurableStore.project(configRoot(),storage.repoRoot,'planning',inspectArtifact,true)!).put(id,content,mediaType),read:(ref:ArtifactRef)=>store!.read(ref)};
+    const report=await applyCandidateStorageReduction(proposal,receipt,receiptStore,owner,boundary,progress);
+    store!.put(`storage-report-${randomUUID()}`,canonicalize(report),'application/vnd.controlled-dev.storage-report+json');
+    label='Status: Verifying the project and saving its transfer checkpoint';quiescent();
+    releaseProjectHandoff({repoRoot:storage.repoRoot,manager,workspaceLock,assertQuiescent:quiescent,candidateDescriptors:currentProjectHandoffCandidatePaths(storage.repoRoot),retireAuthority:()=>{}});
+    ctx.ui.notify(`${report.status==='PAUSED'?'Storage reduction paused at a safe point':'Storage reduction completed'}. Removed ${report.removedFiles} verified duplicate files (${(report.removedBytes/1048576).toFixed(1)} MiB of old payload copies). Shared content was saved first; the proposal estimated a net saving of ${(proposal.estimatedSavedBytes/1048576).toFixed(1)} MiB. Task history and consumed attempts are unchanged. No agent was started. ${report.status==='PAUSED'?'Run Reduce duplicate saved copies again to continue.':'Choose Resume transferred project to continue the saved task.'}`,'info');
+  },{retainLeaseOnFailure:true});},'Checking saved copies before reducing storage');}finally{storagePause=undefined}
+}
+
 /** Orderly close without an active workflow still saves project changes.
  * No old approval is reused; an uncertain task prevents transfer release. */
 export async function releaseProductionProjectStorage(ctx:Pick<ProductionCommandContext,'cwd'>):Promise<void>{
   const storage=resolveProjectStorage(configRoot(),realpathSync(ctx.cwd));if(!storage.custodian)return;
-  await CandidatePromotionRepository.withLease(configRoot(),storage.repoRoot,inspectArtifact,async repo=>{
-    const manager=repo.options.manager!,workspaceLock=repo.options.workspaceLock!,tasks=join(storage.projectRoot,'tasks');
+  // A known source precondition failure must not reserve a host lease that the
+  // shutdown path intentionally retains for uncertain checkpoint mutations.
+  // Publication still rechecks the source under the actual acquired lease.
+  const source=new CandidateGit(storage.repoRoot,configRoot());
+  source.assertTarget(source.target(),source.head());
+  await withProjectWorkspaceLease(configRoot(),storage.repoRoot,async(manager,workspaceLock)=>{
+    const tasks=join(storage.projectRoot,'tasks'),verify=projectQuiescenceCheck(tasks,manager,workspaceLock);verify();
+    // Exact reuse is still under the real lease and verified role quiescence.
+    // A descriptor alone cannot vouch for an UNKNOWN or still-active process.
+    try{
+      const saved=readProjectHandoff(storage.repoRoot);
+      if(saved?.ownerDisposition==='RELEASED_FOR_TRANSFER')return;
+      if(saved?.ownerDisposition==='LEASE_HELD_CHECKPOINT'){
+        // Publish a fresh transfer release of exact saved data. No old task or
+        // live worktree authority is reclaimed; import restores a separate copy.
+        const proof=projectTaskQuiescenceCheck(tasks);proof();
+        releaseProjectHandoff({repoRoot:storage.repoRoot,manager,workspaceLock,assertQuiescent:proof,candidateDescriptors:saved.candidateDescriptors,retireAuthority:()=>{}});
+        return;
+      }
+    }catch(error){if((error as {code?:string}).code!=='PROJECT_HANDOFF_CHECKPOINT_STALE')throw error}
+    const repo=CandidatePromotionRepository.open(configRoot(),storage.repoRoot,inspectArtifact,{create:true,manager,workspaceLock})!;
     const ids=(()=>{try{return readdirSync(tasks).sort()}catch(error){if((error as {code?:string}).code==='ENOENT')return [];throw error}})();
     const proofOnly=()=>{
       const current=(()=>{try{return readdirSync(tasks).sort()}catch(error){if((error as {code?:string}).code==='ENOENT')return [];throw error}})();
@@ -143,10 +205,10 @@ export async function releaseProductionProjectStorage(ctx:Pick<ProductionCommand
         const root=join(tasks,id),stat=lstatSync(root);
         if(!stat.isDirectory()||stat.isSymbolicLink()||realpathSync(root)!==root)throw new Error('PROJECT_STORAGE_PATH_INVALID');
         const ledger=DurableStore.load(root);
-        if(ledger.truncatedTailBytes||ledger.state.runs.some(run=>!runQuiescent(run)))throw new Error('PROJECT_HANDOFF_ROLE_NOT_QUIESCENT');
+        if(ledger.truncatedTailBytes||inspectHostCommandRecovery(root,ledger).status!=='QUIESCENT'||ledger.state.runs.some(run=>!runQuiescent(run)))throw new Error('PROJECT_HANDOFF_ROLE_NOT_QUIESCENT');
       }
     };
-    const verify=projectQuiescenceCheck(tasks,manager,workspaceLock);verify();proofOnly();
+    verify();proofOnly();
     const descriptors=[...currentProjectHandoffCandidatePaths(storage.repoRoot)];
     for(const id of ids){
       const root=join(tasks,id),ledger=DurableStore.load(root);
@@ -160,11 +222,17 @@ export async function releaseProductionProjectStorage(ctx:Pick<ProductionCommand
     const planning=productionProjectPlanning(ctx);if(planning)rebuildProjectPlanningView(planning);
     proofOnly();releaseProjectHandoff({repoRoot:storage.repoRoot,manager,workspaceLock,assertQuiescent:proofOnly,candidateDescriptors:descriptors,
       retireAuthority:()=>repo.retireForProjectTransfer()});
-  },undefined,{retainLeaseOnFailure:true});
+  },{retainLeaseOnFailure:true});
 }
 /** Reuse decoded terminal proofs only while every authoritative task byte and
  * physical file identity still matches the initially verified namespace. */
 function projectQuiescenceCheck(tasksRoot:string,manager:LockManager,lock:import('./lock-manager.js').LockHandle):()=>void{
+  const verify=projectTaskQuiescenceCheck(tasksRoot);
+  return ()=>{if(!manager.verifyWorkspaceLock(lock))throw new Error('PROJECT_HANDOFF_LEASE_LOST');verify();if(!manager.verifyWorkspaceLock(lock))throw new Error('PROJECT_HANDOFF_LEASE_LOST')};
+}
+/** Content-bound quiescence remains checkable inside the final release mutation,
+ * after its owner has deliberately retired the lease. */
+function projectTaskQuiescenceCheck(tasksRoot:string):()=>void{
   let verified:string|undefined;
   const fingerprint=()=>{
     const entries:unknown[]=[];let total=0;
@@ -182,12 +250,11 @@ function projectQuiescenceCheck(tasksRoot:string,manager:LockManager,lock:import
     return hashCanonical(entries);
   };
   return ()=>{
-    if(!manager.verifyWorkspaceLock(lock))throw new Error('PROJECT_HANDOFF_LEASE_LOST');
     const before=fingerprint();
     if(verified!==undefined){if(before!==verified)throw new Error('PROJECT_HANDOFF_SOURCE_CHANGED');return}
     let names:string[];try{names=readdirSync(tasksRoot)}catch(error){if((error as {code?:string}).code==='ENOENT')names=[];else throw error}
-    for(const id of names){const ledger=DurableStore.load(join(tasksRoot,id));if(ledger.truncatedTailBytes||ledger.state.runs.some(run=>!runQuiescent(run)))throw new Error('PROJECT_HANDOFF_ROLE_NOT_QUIESCENT')}
-    if(fingerprint()!==before||!manager.verifyWorkspaceLock(lock))throw new Error('PROJECT_HANDOFF_SOURCE_CHANGED');
+    for(const id of names){const ledger=DurableStore.load(join(tasksRoot,id));if(ledger.truncatedTailBytes||inspectHostCommandRecovery(join(tasksRoot,id),ledger).status!=='QUIESCENT'||ledger.state.runs.some(run=>!runQuiescent(run)))throw new Error('PROJECT_HANDOFF_ROLE_NOT_QUIESCENT')}
+    if(fingerprint()!==before)throw new Error('PROJECT_HANDOFF_SOURCE_CHANGED');
     verified=before;
   };
 }
@@ -509,7 +576,9 @@ export function productionStatusPages(ctx:ProductionCommandContext,current?:Cent
     productionCandidatePromotion(ctx)?.status(ledger!.state.taskId).baselineReady?"The result is available in the current project version.":"The original repository is unchanged.",'',
     "Confirmations and recovery","No pending confirmations.","Recovery not required.",
   ].join('\n')):renderProductionStatus(ctx,current,taskId);
-  const activityLines:string[]=[];let validationNumber=0;
+  const hostOperations=ledger&&storeRoot?inspectHostCommandRecovery(storeRoot,ledger):undefined;
+  const executionCounts=runExecutionCounts(ledger?.state.runs??[]);
+  const activityLines:string[]=[`Recorded attempts: ${executionCounts.reserved}. Agent runs identified: ${executionCounts.identifiedRuns}. Confirmed not started: ${executionCounts.provenNotStarted}. Unresolved attempts: ${executionCounts.uncertain}.\nHistorical attempt limits remain unchanged.`];let validationNumber=0;
   for(const event of ledger?.events.slice(-80)??[]){
     let label:string|undefined;
     if(event.kind==='CREATE')label="Task prepared";
@@ -539,6 +608,7 @@ export function productionStatusPages(ctx:ProductionCommandContext,current?:Cent
     }
     if(label)activityLines.push(label);
   }
+  if(hostOperations)activityLines.push(`Host checks: ${hostOperations.status==='QUIESCENT'?'no unfinished command recorded':hostOperations.status==='UNKNOWN'?'an unfinished check needs reconciliation':'check records need verification'}. Recorded commands: ${hostOperations.operations}.`);
   const activity=activityLines.join('\n\n')||"No execution activity recorded.";
   const checks:string[]=[];
   if(spec?.acceptanceCriteria?.length)checks.push("Acceptance criteria",...spec.acceptanceCriteria.map(criterion=>`• ${display(criterion.text)} (${criterion.method==='REVIEW'?'Reviewer':"automated check"})`),'');
@@ -574,7 +644,7 @@ export function productionStatusPages(ctx:ProductionCommandContext,current?:Cent
   if(review?.kind==='ReviewResult')checks.push('',"Independent review",`• Reviewer: ${review.value.verdict}. The orchestrator decides completion.`);
   const runtimeRefs=ledger?.events.filter(value=>value.recordType==='VALIDATION_RECORDED').flatMap(value=>value.evidenceRefs.filter(id=>id.startsWith('runtime-')))??[];
   return {overview,activity,checks:checks.join('\n')||"No checks defined.",technical:JSON.stringify({taskId:ledger?.state.taskId??spec?.taskId,state:ledger?.state.state??'NO_RUN',revision:ledger?.state.revision,
-    candidate:ledger?.state.candidate,runs:ledger?.state.runs,validations:spec?.validationCommands,runtimeEvidenceRefs:runtimeRefs,
+    executionCounts,hostOperations,candidate:ledger?.state.candidate,runs:ledger?.state.runs,validations:spec?.validationCommands,runtimeEvidenceRefs:runtimeRefs,
     executableScenarios:scenarioRecords.map(value=>({scenarioId:value.scenarioId,version:value.version,scenarioHash:value.scenarioHash})),
     scenarioRuns:scenarioRuns.map(value=>({runId:value.runId,scenarioId:value.scenarioId,result:value.result,generation:value.candidateGeneration})),pendingGate:ledger?.state.pendingGateId},null,2)};
 }
@@ -656,7 +726,7 @@ export function productionRecoveryStatus(ctx:ProductionCommandContext,taskId?:st
   const owner={DEAD:"terminated",LIVE:"active",UNCERTAIN:"unverifiable",NONE:"no evidence available"}[recovery.lockOwnerStatus];
   const store=classifyStore(target.data,target.storeRoot);
   return {...target,recovery,resume,store,...(storageResumeHint?{storageResumeHint}:{}),attempts:attempts.map(a=>({runId:a.runId,result:a.result,reason:a.reason,observedAt:a.observedAt})),
-    message:`Store: ${store.classification} (${store.reason}). Explicit repair: /controlled-dev repair ${target.taskId}.\n${resume.action==='NO_ACTION_TERMINAL'?"The task has ended.":storageResumeHint?"The project was closed with a verified save.":"The task was interrupted during a previous execution."}\nSaved status: ${resume.lastSafeState}\nOwning process: ${owner}\nLock: ${recovery.safeReclaimPossible?"recoverable":"not recoverable without further evidence"}\nUncertain children: ${unknown}\nAutomatic resume: not permitted\n${storageResumeHint?"\nResume after closing\n"+storageResumeHint:resume.message}`};
+    message:`Store: ${store.classification} (${store.reason}). ${store.classification==='REPAIRABLE'?`Explicit repair: /controlled-dev repair ${target.taskId}.`:store.classification==='AMBIGUOUS'?"Interrupted operations need further evidence; repair cannot decide their outcome.":"Preserve the saved evidence."}\n${resume.action==='NO_ACTION_TERMINAL'?"The task has ended.":storageResumeHint?"The project was closed with a verified save.":"The task was interrupted during a previous execution."}\nSaved status: ${resume.lastSafeState}\nOwning process: ${owner}\nLock: ${recovery.safeReclaimPossible?"recoverable":"not recoverable without further evidence"}\nUncertain children: ${unknown}\nAutomatic resume: not permitted\n${storageResumeHint?"\nResume after closing\n"+storageResumeHint:resume.message}`};
 }
 /** Menu routing only. A terminal, fully verified ledger needs no recovery
  * classification. Explicit recovery/repair still performs its full checks. */
@@ -679,7 +749,7 @@ export function productionProjectStorageResumeChoices(ctx:ProductionCommandConte
   for(const id of ids){
     const taskRoot=join(root,id),stat=lstatSync(taskRoot);if(!stat.isDirectory()||stat.isSymbolicLink()||realpathSync(taskRoot)!==taskRoot)throw new Error('PROJECT_STORAGE_PATH_INVALID');
     const ledger=DurableStore.load(taskRoot);if(['COMPLETED','FAILED'].includes(ledger.state.state))continue;
-    try{prepareProjectRuntimeImport(configRoot(),storage.repoRoot,id,ctx.sessionManager.getSessionId()!,inspectArtifact)}catch(error){
+    try{if(!prepareProjectRuntimeImportRecovery(configRoot(),storage.repoRoot,id,ctx.sessionManager.getSessionId()!,inspectArtifact))prepareProjectRuntimeImport(configRoot(),storage.repoRoot,id,ctx.sessionManager.getSessionId()!,inspectArtifact)}catch(error){
       if(error instanceof Error&&error.message.startsWith('PROJECT_RUNTIME_IMPORT_'))continue;throw error;
     }
     const spec=ledger.records.find(r=>r.kind==='TaskSpec'&&r.id===ledger.state.spec.id);if(spec?.kind!=='TaskSpec')throw new Error('PROJECT_RUNTIME_IMPORT_BINDING_INVALID');
@@ -856,7 +926,7 @@ export async function runProductionWorkflow(host:OrchestratorHost,ctx:Production
 export async function decideProductionHumanGate(host:OrchestratorHost,ctx:ProductionCommandContext,choice:HumanDecisionChoice):Promise<ProductionRunResult>{
   if(ctx.mode!=='tui'||ctx.sessionManager?.getSessionId()!==host.ownerSessionId)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   const workflow=host.current,request=workflow?.pendingHumanGate;
-  if(!workflow||!request)throw new Error('NO_PENDING_GATE');
+  if(!workflow||!request)throw new Error(workflow?.state.pendingGateId?'HUMAN_GATE_REOPEN_REQUIRED':'NO_PENDING_GATE');
   const receipt=await presentHumanGate(ctx,request,choice);
   if(!receipt)return {outcome:'NOT_CONFIRMED',taskId:workflow.state.taskId};
   await showHostOperation(ctx,request.gateType==='beforeCompletion'?"Final checks and save":request.gateType==='beforeReviewerRedispatch'?"Preparing independent review":"Checking authorization");
@@ -919,6 +989,7 @@ export async function continueProductionWorkflow(workflow:CentralOrchestrator,ct
     // This bounded retry always asks the operator, including under project autonomy.
     const receipt=await presentHumanGate(ctx,request);
     if(!receipt)return {outcome:'NOT_CONFIRMED',taskId:spec.taskId};
+    await showHostOperation(ctx,"Checking the unchanged baseline and new authorization");
     const decision=workflow.acceptHumanDecision(request.snapshot,receipt);
     const resultingState:string=workflow.state.state;
     if(decision.decision!=='APPROVE')return {outcome:resultingState==='FAILED'?'FAILED':'BLOCKED',taskId:spec.taskId};
@@ -966,7 +1037,9 @@ export async function continueProductionWorkflow(workflow:CentralOrchestrator,ct
       else if(!retryWorkRoot)git(workflow.state.repoRoot,'worktree','add','--quiet','--detach',workRoot,workflow.state.baselineCommit!);
     }
     let developed;
-    try{developed=rework?await workflow.rework(workflow.state.revision,workRoot):await workflow.implement(workflow.state.revision,workRoot)}
+    let initialActivity="Status: Checking the starting version before development";
+    const hostOptions={hostCommandProgress:(event:import('./host-command.js').HostCommandProgress)=>{initialActivity=`Status: Checking the starting version — ${event.description??"Approved automated check"}, ${Math.floor(event.elapsedMs/1000)} s`}};
+    try{developed=await withProgress(ctx.ui,()=>initialActivity,()=>rework?workflow.rework(workflow.state.revision,workRoot,hostOptions):workflow.implement(workflow.state.revision,workRoot,hostOptions),"Checking the starting version before development")}
     catch(error){if(ctx.autonomy&&workflow.canOpenBeforeDeveloperRecovery())return continueProductionWorkflow(workflow,ctx);throw error;}
     if(developed.decision==='BLOCKED'){
       ctx.ui.notify(`The Developer stopped this attempt.\n${developed.value?.blockedReason??workflow.state.blockedReason??"A check is required before continuing."}\nEvidence and previously used attempts are preserved. Use /controlled-dev resume to check whether resuming with a new confirmation is possible.`,'warning');
@@ -974,7 +1047,8 @@ export async function continueProductionWorkflow(workflow:CentralOrchestrator,ct
     }
     workflow.testing(workflow.state.revision);
     }
-    const validation=workflow.validateApproved(workflow.state.revision);
+    let validationActivity="Status: Preparing the approved checks";
+    const validation=await withProgress(ctx.ui,()=>validationActivity,()=>workflow.validateApprovedAsync(workflow.state.revision,{onProgress:event=>{validationActivity=`Status: Checking ${event.description??"the approved result"} — ${Math.floor(event.elapsedMs/1000)} s`}}),"Running the approved checks");
     if(validation.decision==='BLOCKED'){
       const failed=validation.value?.find(value=>value.status==='FAILED');
       if(!failed||!spec.humanGates.beforeImplementation){

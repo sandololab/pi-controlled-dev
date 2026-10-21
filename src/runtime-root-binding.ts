@@ -82,7 +82,7 @@ export function verifiedRuntimeRootMappings(records:readonly ContextRecord[],eve
    ||previous.value.runs.some(run=>!['TERMINAL','NOT_DISPATCHED'].includes(run.status)))fail();
   const prior=previous.value.candidate;
   if((prior?.root??null)!==p.previousCandidateRoot||(prior?.digest??null)!==p.candidateDigest||(prior?.generation??null)!==p.candidateGeneration)fail();
-  if(p.resumeState!==runtimeRebindResumeState(previous.value,records))fail();
+  if(p.resumeState!==runtimeRebindResumeState(previous.value,records,events))fail();
   if(p.schemaVersion===2)verifyBoundedBaseline(b,p,seal,previous.value,records,events,reader,result);
   const next=records.find(x=>x.kind==='WorkflowState'&&x.value.taskId===p.taskId&&x.value.revision===p.sourceRevision+1);
   if(next?.kind!=='WorkflowState'||next.value.runtimeBindingRef?.id!==record.id||next.value.repoRoot!==p.repoRoot||next.value.state!==p.resumeState
@@ -95,7 +95,23 @@ export function verifiedRuntimeRootMappings(records:readonly ContextRecord[],eve
  }
  return Object.freeze(result);
 }
-export function runtimeRebindResumeState(state:WorkflowState,records:readonly ContextRecord[]):WorkflowState['state']{
+export function runtimeRebindResumeState(state:WorkflowState,records:readonly ContextRecord[],events:readonly TransitionEvent[]=[]):WorkflowState['state']{
+ // A historical checkpoint failure occurred after the accepted Developer and
+ // ScopeGuard capture, but the broad dispatch catch then marked it BLOCKED.
+ // Import may restore this exact candidate for checks, never rerun its writer.
+ if(state.state==='BLOCKED'&&state.blockedReason==='Developer dispatch/result failed'&&state.candidate&&!state.pendingGateId&&state.runs.every(r=>r.status==='TERMINAL')){
+  const run=state.runs.at(-1),result=records.find(r=>r.kind==='DeveloperResult'&&r.id===run?.resultRef);
+  const block=events.findLast(e=>e.revision<=state.revision&&e.transitionId==='TR-015'&&e.reason===state.blockedReason);
+  const capture=events.find(e=>e.revision===block?.previousRevision&&e.recordType==='CANDIDATE_MATERIALIZED');
+  const previous=records.find(r=>r.kind==='WorkflowState'&&r.value.revision===block?.previousRevision);
+  const later=events.filter(e=>block&&e.revision>block.revision&&e.revision<=state.revision);
+  if(run?.role==='Developer'&&run.terminalProofRef&&result?.kind==='DeveloperResult'&&!result.value.blockedReason&&state.results.includes(result.id)
+   &&block?.kind==='TRANSITION'&&block.transitionId==='TR-015'&&block.sourceState==='IMPLEMENTING'&&block.targetState==='BLOCKED'
+   &&capture?.sourceState==='IMPLEMENTING'&&capture.targetState==='IMPLEMENTING'&&capture.evidenceRefs.includes(state.candidate.manifest.id)
+   &&previous?.kind==='WorkflowState'&&previous.value.state==='IMPLEMENTING'&&same(previous.value.candidate,state.candidate)
+   &&later.every(e=>e.kind==='RECORD'&&e.recordType==='RECONCILED'&&e.sourceState==='BLOCKED'&&e.targetState==='BLOCKED')
+   &&[result.id,state.candidate.manifest.id,state.candidate.patch.id,state.candidate.terminalProof.id].every(id=>!state.invalidEvidenceIds.includes(id)))return 'TESTING';
+ }
  if(state.state==='AWAITING_HUMAN'){
   const gate=records.find(r=>r.kind==='HumanGate'&&r.id===state.pendingGateId);
   if(gate?.kind!=='HumanGate')fail();

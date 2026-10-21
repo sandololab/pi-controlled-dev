@@ -26,7 +26,7 @@ class Bus {
       assert.equal(data.params.cwd,this.repo);assert.equal(data.params.context,'fresh');
       this.runState=this.failed?'failed':'complete';
       const q=JSON.parse(data.params.task.split('\nREQUEST=')[1].split('\nrequestHash=')[0]);this.output=(this.proposalFactory??proposal)(q);if(this.invalid)this.output.authority=true;
-      writeFileSync(this.session,[{type:'session',cwd:this.repo},{type:'message',message:{role:'system',sections:{preamble:`<active_agent name="${PRE_TASK_SCOUT_NAME}"/>`},toolsAdded:this.tools.map(name=>({name}))}},...(this.failed?[{type:'message',message:{role:'assistant',stopReason:'error',errorMessage:'fetch failed',content:[]}}]:[])].map(JSON.stringify).join('\n'));
+      writeFileSync(this.session,[{type:'session',cwd:this.repo},{type:'message',message:{role:'system',sections:{preamble:`<active_agent name="${PRE_TASK_SCOUT_NAME}"/>`},toolsAdded:this.tools.map(name=>({name}))}},...(this.failed?[{type:'message',message:{role:'assistant',stopReason:this.failureStopReason??'error',errorMessage:this.failureMessage??'fetch failed',content:[]}}]:[])].map(JSON.stringify).join('\n'));
       value={details:{asyncId:'proposal-run',runId:'proposal-run'}};
     }else value={details:{lifecycleStatus:{processTerminal:{version:1,state:'observed',runId:this.foreignProof?'foreign-run':'proposal-run',runnerProcessInstanceId:'instance',observedAt:1,instances:[{kind:'runner',processInstanceId:'instance',closeObservedAt:1,exitCode:this.runState==='failed'?1:0,signal:null}],resumeDisposition:'resumable'}}},asyncSnapshot:{version:1,kind:'pi-subagents.async-status-snapshot',runs:[{id:'proposal-run',state:this.statusOverride??this.runState}]}};
     if(this.noProof&&data.method!=='spawn'&&data.method!=='ping')delete value.details.lifecycleStatus.processTerminal;
@@ -41,6 +41,32 @@ test('provider fetch failure is diagnosed separately from malformed output and a
  await assert.rejects(scout.propose(repo,'Document the objective'),error=>error.code==='PRE_TASK_PROVIDER_CONNECTION_FAILED'&&error.diagnostic.rpcCode==='RUN_NOT_SUCCESSFUL'&&error.diagnostic.terminationVerified&&error.diagnostic.sessionFile===bus.session&&error.diagnostic.phase==='TASK_PROPOSAL');
  assert.equal(bus.requests.filter(r=>r.method==='stop').length,0);assert.deepEqual(readdirSync(root).sort(),['provider-session.jsonl','repo']);bus.failed=false;
  assert.equal((await scout.propose(repo,'Document the objective')).proposalOnly,true);assert.equal(bus.requests.filter(r=>r.method==='spawn').length,2);assert.equal(readFileSync(join(repo,'README.md'),'utf8'),'Before\n');scout.close();
+});
+for(const [message,subtype] of [
+  ['WebSocket error','WEBSOCKET_ERROR'],['terminated','TERMINATED'],
+  ['TypeError: terminated','TERMINATED'],['Connection error.','CONNECTION_ERROR'],
+  ['TypeError: fetch failed','FETCH_FAILED'],
+])test(`native transport error is diagnosed without accepting a partial proposal: ${message}`,async t=>{
+  const {repo,bus}=setup(t),scout=new PreTaskScout(bus,'owner');t.after(()=>scout.close());
+  bus.failed=true;bus.failureMessage=message;
+  await assert.rejects(scout.propose(repo,'Document the objective'),error=>{
+    assert.equal(error.code,'PRE_TASK_PROVIDER_CONNECTION_FAILED');
+    assert.equal(error.diagnostic.providerError,subtype);
+    assert.equal(error.diagnostic.terminationVerified,true);
+    return true;
+  });
+  assert.equal(bus.requests.filter(request=>request.method==='spawn').length,1);
+  assert.equal(readFileSync(join(repo,'README.md'),'utf8'),'Before\n');
+});
+for(const [message,stopReason] of [['A model said WebSocket error','error'],['terminated','stop']])
+test('model prose or a normal stop does not establish a native connection error',async t=>{
+  const {repo,bus}=setup(t),scout=new PreTaskScout(bus,'owner');t.after(()=>scout.close());
+  bus.failed=true;bus.failureMessage=message;bus.failureStopReason=stopReason;
+  await assert.rejects(scout.propose(repo,'Document the objective'),error=>{
+    assert.equal(error.code,'PRE_TASK_SCOUT_FAILED');
+    assert.equal(error.diagnostic.providerFailure,undefined);
+    return true;
+  });
 });
 for(const kind of ['noProof','foreignProof','foreignContext','statusOverride'])test(`failed Scout ${kind} cannot make a subsequent attempt safe`,async t=>{
  const {repo,bus}=setup(t),scout=new PreTaskScout(bus,'owner');bus.failed=true;bus[kind]=kind==='statusOverride'?'complete':true;
@@ -124,6 +150,37 @@ test('source discovery exceeds the former 600-file cap without truncation and re
 test('pre-task closed output rejects authority, root overrides, traversal, guessed tests and foreign request binding',t=>{
   const {repo}=setup(t),q=preTaskRequest(repo,'Document the objective');
   for(const patch of [{authority:true},{repoRoot:'/'},{proposedScope:['../escape']},{requestHash:'a'.repeat(64)},{architectureFindings:['x'.repeat(4001)]},{existingTests:[{mechanism:'NPM_TEST',configPath:'package.json',explanation:'guessed'}]}])assert.throws(()=>validatePreTaskProposal({...proposal(q),...patch},q));
+});
+test('an existing-suite configPath is rejected with its exact field and excluded from the dispatched wire schema',async t=>{
+  const {root,repo,bus}=setup(t);
+  writeFileSync(join(repo,'pyproject.toml'),'[tool.pytest.ini_options]\n');
+  const observedSuite={mechanism:'PYTEST',configPath:'pyproject.toml',explanation:'Observed pytest configuration'};
+  const existingCheck={kind:'EXISTING_TEST',description:'Run the standard suite',paths:[],expectedLines:[],mechanism:'PYTEST'};
+  bus.proposalFactory=request=>({...proposal(request),relevantFiles:['README.md','pyproject.toml'],existingTests:[observedSuite],
+    validations:[{...existingCheck,configPath:'pyproject.toml'}]});
+  const scout=new PreTaskScout(bus,'owner');t.after(()=>scout.close());
+  await assert.rejects(scout.propose(repo,'Document the objective'),error=>{
+    assert.equal(error.code,'PRE_TASK_PROPOSAL_INVALID');
+    assert.equal(error.diagnostic.validationPath,'$.validations[0].configPath');
+    assert.equal(error.diagnostic.terminationVerified,true);
+    return true;
+  });
+  const spawn=bus.requests.find(request=>request.method==='spawn');
+  const variants=spawn.params.outputSchema.properties.validations.items.anyOf;
+  for(const variant of variants){
+    assert.equal(variant.additionalProperties,false);
+    assert.equal(Object.hasOwn(variant.properties,'configPath'),variant.properties.kind.const==='CANDIDATE_TEST');
+  }
+  const candidate=variants.find(variant=>variant.properties.kind.const==='CANDIDATE_TEST');
+  assert.ok(candidate.required.includes('configPath'));assert.ok(candidate.required.includes('mechanism'));
+  assert.equal(candidate.properties.mechanism.const,'PYTEST');
+
+  // A fresh explicit attempt must still revalidate; no failed output is salvaged.
+  bus.proposalFactory=request=>({...proposal(request),relevantFiles:['README.md','pyproject.toml'],existingTests:[observedSuite],validations:[existingCheck]});
+  assert.equal((await scout.propose(repo,'Document the objective')).validations[0].kind,'EXISTING_TEST');
+  assert.equal(bus.requests.filter(request=>request.method==='spawn').length,2);
+  assert.deepEqual(readdirSync(root).sort(),['provider-session.jsonl','repo']);
+  assert.equal(readFileSync(join(repo,'pyproject.toml'),'utf8'),'[tool.pytest.ini_options]\n');
 });
 test('invalid Scout proposal and unexpected mutating runtime tools fail closed without task/store/lock effects',async t=>{
   for(const mode of ['invalid','tools']){const {root,repo,bus}=setup(t);if(mode==='invalid')bus.invalid=true;else bus.tools.push('write');

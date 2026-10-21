@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "Manuale utente — versione 0.1.0-beta.2"
+subtitle: "Manuale utente — versione 0.1.0-beta.4"
 lang: it-IT
 toc-title: Indice
 ---
@@ -14,7 +14,7 @@ La TUI e i prompt inclusi sono in inglese; i nomi dei pulsanti riportati qui cor
 
 pi-controlled-dev è un package per Pi Coding Agent. Ti permette di affidare un lavoro di sviluppo a ruoli distinti, con confini espliciti, verifiche del risultato e conferme richieste a te.
 
-Questo manuale descrive la versione **0.1.0-beta.2**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
+Questo manuale descrive la versione **0.1.0-beta.4**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
 
 # Stato effettivo di questa beta
 
@@ -306,7 +306,17 @@ pi list
 
 Questa installazione segue il branch predefinito del repository pubblico. Per fissare una revisione verificata, aggiungi `@COMMIT_SHA` alla sorgente Git, sostituendo il segnaposto con il commit desiderato. Un commit fissato non avanza agli aggiornamenti successivi.
 
-I comandi sono documentati per Pi 1.3.0. Consulta anche lo [stato delle verifiche](VALIDATION.md): questa revisione è una beta di sviluppo con problemi noti.
+I comandi sono documentati per Pi 1.3.0. Consulta anche lo [stato delle verifiche](VALIDATION.md): questa revisione è una beta di sviluppo con copertura e limiti documentati.
+
+## Aggiorna un'installazione Git
+
+Chiudi Pi normalmente, seleziona lo stesso profilo usato per l'installazione,
+esegui `pi update git:github.com/sandololab/pi-controlled-dev` e riavvia Pi.
+La copia di sviluppo locale e quella installata da Git si aggiornano separatamente.
+Le revisioni fissate non avanzano automaticamente. Prima di riprendere un progetto
+trasferito, installa beta.4 o successiva su ogni computer se le sue evidenze usano
+verifiche host asincrone; le copie candidate condivise richiedono beta.3 o
+successiva. Consulta le [verifiche correnti](VALIDATION.md).
 
 ## Installa il tarball, in alternativa
 
@@ -315,7 +325,7 @@ Supponendo che il file ricevuto sia nella directory Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.2.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list
@@ -870,7 +880,7 @@ I file generati sono una rappresentazione. Lo stato autorevole, le identità, gl
 
 Se il Developer ha registrato una scelta architetturale significativa, la pagina Task contiene la sezione **Design choices**. Spiega ciò che è stato riutilizzato, le eventuali nuove astrazioni o pattern e il motivo della coerenza con l’architettura esistente. La sezione non appare per una modifica priva di decisioni progettuali rilevanti e il suo testo resta una spiegazione derivata dai record, non autorità.
 
-Per annotare liberamente un task, uno scenario o una prova usa il file collegato nella cartella `Notes`. Questi file vengono creati una sola volta e non sono riscritti. Se una nota generata è stata modificata o manca, ricostruisci la vista con:
+Da Home apri **All personal notes**: l’indice collega ogni annotazione alla relativa scheda. Le nuove note in `Notes` contengono anche il collegamento di ritorno. Il testo personale modificato resta identico byte per byte; soltanto un modello iniziale ancora intatto può ricevere i link di navigazione. L’indice fornisce il collegamento alla scheda anche per le vecchie note già personalizzate. La memoria tecnica riutilizzabile è distinta da piano, stato e cronologia salvati; il suo indice spiega anche quando il progetto non ha ancora memorie registrate. Se una nota generata è stata modificata o manca, ricostruisci la vista con:
 
 ```text
 /controlled-dev rebuild-view
@@ -991,3 +1001,32 @@ fornita agli agenti incaricati di svilupparla e verificarla. Rispondere non auto
 lo sviluppo: valgono ancora i file ammessi, i requisiti e le conferme previste.
 Se la risposta richiede requisiti o file diversi, occorre rivedere la proposta
 dell’attività. Il package non inventa quella revisione e non prosegue in autonomia.
+
+## Checkpoint e copie candidate di più attività
+
+Il limite di 1 GiB per le copie candidate conservate si applica a ogni attività. L’intero checkpoint conserva un limite di 100.000 elementi e di 64 MiB per file. Ogni file viene comunque verificato; i limiti non disattivano i controlli di integrità.
+
+Se il checkpoint fallisce subito dopo un risultato del Developer accettato e l’acquisizione verificata del candidato, la ripresa del progetto rilasciato può ripristinare quel candidato per eseguire i test. Non viene ripetuto il Developer. Il risultato, la prova di arresto, il candidato invariato e la sequenza dell’interruzione devono essere verificabili. Gli altri blocchi mantengono i propri requisiti di recupero.
+
+# Copie salvate e spazio sul disco
+
+Scegliere **Reduce duplicate saved copies** dopo aver chiuso Pi normalmente e riaperto il progetto, prima della ripresa del task. Il package verifica le copie e presenta il risparmio stimato per la conferma nativa. Alt+I richiede una pausa sicura. Il formato condiviso richiede la versione 0.1.0-beta.3 o successiva. Consultare [ridurre le copie salvate](CANDIDATE-STORAGE.md) per trasferimento e limiti.
+
+# Risultati salvati, verifiche e interruzioni
+
+Se il salvataggio del checkpoint trasferibile fallisce dopo la registrazione del
+lavoro, conservare la copia di lavoro e usare `/controlled-dev checkpoint` nella
+sessione corrente. Questo comando ritenta soltanto il salvataggio. Se la sessione
+è già terminata, usare la normale ripresa del progetto. Quando la preparazione
+della revisione rileva dati incoerenti, indica il campo coinvolto prima di
+avviare l'agente.
+
+Durante l'esecuzione dei comandi di verifica l'interfaccia può mostrare il tempo
+trascorso e ricevere le richieste di consultazione. L'output completo viene
+conservato fino a 4 MiB; superare il limite o la durata autorizzata interrompe il
+controllo e non produce un esito positivo. Lo stato distingue tentativi registrati,
+esecuzioni identificate e avvii sicuramente non avvenuti.
+
+Le nuove prove dei processi asincroni richiedono **0.1.0-beta.4 o successiva**,
+anche dopo un trasferimento. Il [piano di affidabilità](RELIABILITY-PLAN.md)
+riporta verifiche e limiti; alcune letture e operazioni Git restano sincrone.

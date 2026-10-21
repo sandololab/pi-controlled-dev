@@ -119,7 +119,7 @@ function scopeRecoveryRunners(){
  return registeredRoleDispatchers(runtime);
 }
 
-test('bounded Developer recovery after authenticated same-path import treats old approval only as history and requires a new gate',async t=>{
+for(const checkpoint of ['BLOCKED','READY'])test(`bounded Developer recovery after authenticated same-path import at ${checkpoint} treats old approval only as history and requires a new gate`,async t=>{
  const {restartFixture}=await import('./recovery-fixture.mjs');
  const {initializeProjectCustodian}=await import('../src/project-custodian.ts');
  const h=await import('../src/project-handoff.ts'),im=await import('../src/project-runtime-import.ts');
@@ -134,18 +134,29 @@ test('bounded Developer recovery after authenticated same-path import treats old
  initializeProjectCustodian(repo,{schemaVersion:1,projectId:hashBytes(Buffer.from(repo)),originalRepoRoot:repo,
    baselineCommit:git('rev-parse','HEAD'),baselineTree:git('rev-parse','HEAD^{tree}')},()=>{});
  const f=await restartFixture(root,'DEVELOPER_BOUNDED',false,false,{},undefined,{existingRepo:true});
+ if(checkpoint==='READY'){
+   const q=f.orchestrator.openBeforeBoundedDeveloperRecovery(f.orchestrator.state.revision,'owner');
+   f.orchestrator.acceptHumanDecision(q.snapshot,await presentHumanGate(channel('owner'),q));
+ }
  const before=DurableStore.load(f.storeRoot),reader={agentDataRoot:data,read:ref=>DurableStore.readArtifact(f.storeRoot,ref)};
  const historical=boundedDeveloperRecoveryData(before,reader),oldGate=historical.previousApprovalId;
  const invalidatedWithoutImport=structuredClone(before);invalidatedWithoutImport.state.invalidEvidenceIds.push(oldGate);
  assert.throws(()=>boundedDeveloperRecoveryData(invalidatedWithoutImport,reader),/BOUNDED_DEVELOPER_RECOVERY_UNAVAILABLE/);
- f.orchestrator.dispose();assert.equal(h.readProjectHandoff(repo).ownerDisposition,'RELEASED_FOR_TRANSFER');
+ if(checkpoint==='READY'){
+   // A genuine legacy release before portable bounded checkpoints existed.
+   f.orchestrator.withProjectLease((manager,workspaceLock)=>h.releaseProjectHandoff({repoRoot:repo,manager,workspaceLock,
+     assertQuiescent(){assert.deepEqual(DurableStore.load(f.storeRoot).state,before.state)},
+     retireAuthority(){f.orchestrator.retireForProjectTransfer()}}));
+ }else f.orchestrator.dispose();
+ assert.equal(h.readProjectHandoff(repo).ownerDisposition,'RELEASED_FOR_TRANSFER');
  const proposal=im.prepareProjectRuntimeImport(data,repo,'task','successor',()=> 'ACCEPT');
+ if(checkpoint==='READY')assert.equal(proposal.payload.schemaVersion,1);
  assert.equal(proposal.payload.candidateRoot,null);assert.equal(proposal.payload.previousRepoRoot,repo);
  const request=im.projectRuntimeImportRequest(proposal),receipt=await presentTrustedConfirmation(channel(),request);
  const cap=im.authorizeProjectRuntimeImport(proposal,receipt);
  t.after(()=>{try{const l=im.projectRuntimeImportLease(cap);l.manager.releaseAll(l.locks)}catch{}});
  const o=CentralOrchestrator.restore(takeOverImportedWorkflow(cap),scopeRecoveryRunners()),imported=DurableStore.load(f.storeRoot);
- assert.equal(imported.state.state,'BLOCKED');assert.ok(imported.state.invalidEvidenceIds.includes(oldGate));
+ assert.equal(imported.state.state,checkpoint);assert.ok(imported.state.invalidEvidenceIds.includes(oldGate));
  const proof=boundedDeveloperRecoveryData(imported,reader);
  assert.deepEqual(proof.historicalApprovalBindingRef,imported.state.runtimeBindingRef);
  assert.equal(proof.previousApprovalId,oldGate);assert.equal(proof.originalTreeHash,historical.originalTreeHash);
@@ -820,4 +831,36 @@ test('a preserved NOT_DISPATCHED Reviewer history can reach real reviewed comple
  assert.equal(classifyResumeAction(f.data,f.storeRoot).action,'NO_ACTION_TERMINAL');
  const {classifyStore}=await import('../src/store-repair.ts');assert.equal(classifyStore(f.data,f.storeRoot).classification,'CLEAN');
  assert.ok(load(f).state.completionEvidenceRefs.length,'DurableStore.load validates the terminal completion proof package');
+});
+
+test('interrupted host verification explains the missing host proof without reclaiming locks or suggesting that repair can decide it',t=>{
+ const f=dead(t,'IMPORTED_TESTING'),before=load(f);
+ assert.throws(()=>take(f),/HOST_VERIFICATION_TERMINATION_UNPROVEN/);assert.deepEqual(load(f),before);
+ const previous=process.env.PI_CODING_AGENT_DIR;process.env.PI_CODING_AGENT_DIR=f.data;
+ try{const status=productionRecoveryStatus({...channel(),cwd:f.repo},'task');assert.equal(status.store.classification,'AMBIGUOUS');assert.doesNotMatch(status.message,/Explicit repair/);assert.match(status.message,/repair cannot decide/)}finally{if(previous===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=previous}
+});
+
+test('a dead imported testing checkpoint releases only saved data and restores a separate copy when the old working folder is unavailable',async t=>{
+ const f=dead(t,'IMPORTED_TESTING'),before=load(f),im=await import('../src/project-runtime-import.ts'),h=await import('../src/project-handoff.ts');
+ const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');const {renameSync,readdirSync,existsSync}=await import('node:fs');
+ const oldWork=before.state.candidate.root;renameSync(oldWork,oldWork+'.unavailable');
+ const proposal=im.prepareProjectRuntimeImportRecovery(f.data,f.repo,before.state.taskId,'successor',()=> 'ACCEPT');assert.equal(proposal.evidenceKind,'SEALED_PUBLISHED_CANDIDATE');
+ const request=im.projectRuntimeImportRecoveryRequest(proposal);assert.match(request.presentation.content,/does not resume the old working folder/);assert.match(request.presentation.content,/new checks/);
+ const receipt=await presentTrustedConfirmation(channel(),request);im.recoverProjectRuntimeImport(proposal,receipt);
+ assert.deepEqual(load(f),before);assert.equal(h.readProjectHandoff(f.repo).ownerDisposition,'RELEASED_FOR_TRANSFER');
+ const auditPath=readdirSync(join(f.data,'controlled-dev','runtime-imports')).find(n=>n.startsWith(proposal.id)&&n.endsWith('-reclaim-authorized.json'));
+ const audit=JSON.parse(readFileSync(join(f.data,'controlled-dev','runtime-imports',auditPath),'utf8'));assert.equal(audit.recoveryScope,'SAVED_DATA_FOR_FRESH_COPY');assert.equal(audit.previousHostCommands,'NOT_ASSUMED_TERMINAL');assert.equal(audit.automaticResumeAllowed,false);
+ const fresh=im.prepareProjectRuntimeImport(f.data,f.repo,before.state.taskId,'successor',()=> 'ACCEPT');assert.notEqual(fresh.payload.candidateRoot,oldWork);
+ const approval=await presentTrustedConfirmation(channel(),im.projectRuntimeImportRequest(fresh)),cap=im.authorizeProjectRuntimeImport(fresh,approval);
+ t.after(()=>{try{const l=im.projectRuntimeImportLease(cap);l.manager.releaseAll(l.locks)}catch{}});
+ const {takeOverImportedWorkflow}=await import('../src/recovery-resume.ts'),o=CentralOrchestrator.restore(takeOverImportedWorkflow(cap),{});im.completeProjectRuntimeImport(cap);
+ assert.deepEqual(o.state.counters,before.state.counters);assert.equal(o.state.candidate.digest,before.state.candidate.digest);assert.equal(o.state.state,'TESTING');assert.equal(existsSync(o.state.candidate.root),true);assert.notEqual(o.state.candidate.root,oldWork);assert.equal(existsSync(oldWork),false);
+});
+
+test('saved-data recovery rejects copied authority and changes during confirmation before removing the dead permission pair',async t=>{
+ const f=dead(t,'IMPORTED_TESTING'),before=load(f),im=await import('../src/project-runtime-import.ts');const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
+ const proposal=im.prepareProjectRuntimeImportRecovery(f.data,f.repo,before.state.taskId,'successor',()=> 'ACCEPT'),request=im.projectRuntimeImportRecoveryRequest(proposal),receipt=await presentTrustedConfirmation(channel(),request);
+ assert.throws(()=>im.recoverProjectRuntimeImport({...proposal},receipt),/PROPOSAL_INVALID/);assert.throws(()=>im.recoverProjectRuntimeImport(proposal,{...receipt}),/RECEIPT_INVALID/);
+ writeFileSync(join(f.repo,'Documentazione','new-personal-note.md'),'preserve this new note\n');assert.throws(()=>im.recoverProjectRuntimeImport(proposal,receipt),/RECOVERY_STALE/);assert.deepEqual(load(f),before);
+ const {classifyRecoveryState}=await import('../src/recovery.ts');assert.equal(classifyRecoveryState(f.data,f.storeRoot).recovery.lockOwnerStatus,'DEAD');
 });

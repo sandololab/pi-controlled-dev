@@ -1,3 +1,4 @@
+import { inspectHostCommandRecovery } from './host-command-recovery.js';
 import { isAcquiredLegacyReviewerProof } from './legacy-reviewer-preflight.js';
 import { verifyReviewerNoDispatchProof } from './run-quiescence.js';
 import type { ReviewerNoDispatchProof } from './run-quiescence.js';
@@ -158,8 +159,9 @@ function inspect(dataRoot:string,storeRoot:string,underGuard=false):Inspection {
       {status:'LIVE' as const,reason:'LIVE_P14D_HANDLE'}:inspectProcessOwner(record.schemaVersion===2?record.processIncarnation:undefined)}]:[]});
     if(guarded)return {...base,locks,recovery:status('LOCK_OWNER_UNCERTAIN',locks.some(l=>l.owner.status==='LIVE')?'LIVE':'UNCERTAIN','LOCK_MUTATION_OR_PARTIAL_RECOVERY_PENDING')};
     const reconciled=reconciledQuiescentAttempts(dataRoot,ledger);
-    const unknownChild=ledger.state.runs.some(run=>!runQuiescent(run)&&!reconciled.some(a=>a.assignmentId===run.assignmentId))||
-      ['IMPLEMENTING','TESTING','REVIEWING','REWORK'].includes(ledger.state.state);
+    const host=inspectHostCommandRecovery(storeRoot,ledger);
+    const unknownChild=host.status!=='QUIESCENT'||ledger.state.runs.some(run=>!runQuiescent(run)&&!reconciled.some(a=>a.assignmentId===run.assignmentId))||
+      (['IMPLEMENTING','TESTING','REVIEWING','REWORK'].includes(ledger.state.state)&&!(ledger.state.state==='TESTING'&&host.supervisedTesting));
     // These phases can contain synchronous host subprocesses without a durable terminal record.
     // RunRecord quiescence alone cannot prove their death; P16A deliberately refuses reclaim.
     // load() validates every terminal proof and all historical event/catalog/state bindings.

@@ -82,7 +82,7 @@ export function registerControlledDeveloper(pi: EventPi, runtimeGeneration?: str
 }
 export class ControlledDeveloperError extends ControlledRuntimeError {}
 export interface DeveloperRunOptions extends TerminalProofOptions, MemoryRunOptions { readonly timeoutMs?: number; readonly historyCanary?: string; readonly reworkBase?: AuthorizedReworkBase;
-  /** Host-verified, bounded diagnostic summary; it never changes assignment authority. */ readonly runtimeDiagnosis?: string; readonly scoutClarifications?:ScoutClarificationDelivery; readonly baselineEvidence?:DeveloperBaselineEvidence }
+  /** Host-verified, bounded diagnostic summary; it never changes assignment authority. */ readonly runtimeDiagnosis?: string; readonly scoutClarifications?:ScoutClarificationDelivery; readonly baselineEvidence?:DeveloperBaselineEvidence; readonly hostCommandProgress?:(event:import('./host-command.js').HostCommandProgress)=>void;}
 export interface DeveloperRunEvidence {
   readonly runId: string; readonly requestId: string; readonly childSessionId: string; readonly ownerSessionId: string; readonly runtimeGeneration: string;
   readonly launchContractHash: string; readonly providerLaunchContractDigest?: string; readonly effectiveTools: readonly string[];

@@ -22,6 +22,7 @@ test('native plan shortcut executes while the ordinary Pi command is still await
  assert.equal(finished,false);const before=git(f.repo,'rev-parse','HEAD'),spawnCount=bus.run;
  for(const fn of hooks.get('input')){
   assert.deepEqual(await fn({source:'extension',text:'Subagent updates above.'},ctx),{action:'handled'},'The controlled wizard receives completion without a competing parent question');
+  assert.deepEqual(await fn({source:'extension',text:'Inspect subagent updates above. Answer pending supervisor requests within your authority. For completed work, read saved results and resume the already-authorized parent task, or report completion. If approval is required, explicitly ask the user. Do not silently yield, rerun completed work, or infer new authorization.'},ctx),{action:'handled'},'Current pi-subagents wake text cannot start a competing parent turn');
   assert.deepEqual(await fn({source:'extension',text:'Different extension notice'},ctx),{action:'continue'});
  }
  assert.match(shortcuts.get('alt+p').description,/while work is running/);

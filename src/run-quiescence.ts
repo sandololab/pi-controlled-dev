@@ -49,3 +49,11 @@ function verifyLegacyReviewerEvidence(e:LegacyReviewerPreflightEvidence,a:Assign
   &&Number.isSafeInteger(e.manifestByteLowerBound)&&Number.isSafeInteger(e.ledgerRevision)&&e.ledgerRevision>=0&&/^[a-f0-9]{64}$/.test(e.ledgerEventHash)
   &&Number.isFinite(Date.parse(e.launchStartedAt));
 }
+
+/** Diagnostic counts retain historical reservations and distinguish a proven
+ * no-send outcome from a provider run identity. They never replenish budgets. */
+export function runExecutionCounts(runs:readonly RunRecord[]){
+ return Object.freeze({reserved:runs.length,identifiedRuns:runs.filter(r=>!!r.runId).length,
+   provenNotStarted:runs.filter(r=>r.status==='NOT_DISPATCHED'&&!!r.dispatchProofRef).length,
+   uncertain:runs.filter(r=>!runQuiescent(r)).length});
+}

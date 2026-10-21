@@ -75,7 +75,7 @@ export function prepareProjectRuntimeImport(dataRoot:string,repoRoot:string,task
   sourceRevision:s.revision,sourceEventHash:ledger.events.at(-1)!.eventHash,sourceStateDigest:hashCanonical(s),
   projectOriginalRepoRoot:context.custodian.originalRepoRoot,historicalRepoRoot:spec.value.scope.repoRoot,previousRepoRoot:s.repoRoot,repoRoot:context.repoRoot,
   previousCandidateRoot:s.candidate?.root??null,candidateRoot,candidateDigest:s.candidate?.digest??null,candidateGeneration:s.candidate?.generation??null,
-  humanDigest:importedHandoff!.humanDigest,sourceHead:seal.sourceHead,sourceTree:seal.sourceTree,sourceInventoryDigest:inventoryHash(inventoryTree(context.repoRoot,['.git','node_modules'])),handoffDigest:seal.descriptorDigest,resumeState:runtimeRebindResumeState(s,ledger.records)});
+  humanDigest:importedHandoff!.humanDigest,sourceHead:seal.sourceHead,sourceTree:seal.sourceTree,sourceInventoryDigest:inventoryHash(inventoryTree(context.repoRoot,['.git','node_modules'])),handoffDigest:seal.descriptorDigest,resumeState:runtimeRebindResumeState(s,ledger.records,ledger.events)});
  const proposal=Object.freeze({id:`import-${randomUUID()}`,payload:immutablePayload(payload)});
  const handoffRaw=readFileSync(join(context.repoRoot,'.controlled-dev','handoffs',seal.descriptorDigest+'.json'));
  if(inspect(handoffRaw,'application/vnd.pi-controlled-dev.project-handoff+json')!=='ACCEPT')fail('PROJECT_RUNTIME_IMPORT_DISCLOSURE_REJECTED');
@@ -204,7 +204,7 @@ export function abortProjectRuntimeImport(capability:ProjectRuntimeImportCapabil
  persistJournal(l.data,l.journal,'CLOSED_NO_DISPATCH',{revision:DurableStore.load(l.taskRoot).state.revision});
 }
 
-export interface ProjectRuntimeImportRecoveryProposal {readonly id:string;readonly taskId:string;readonly sourceRevision:number;readonly sourceStateDigest:string;readonly namespaceDigest:string;readonly oldLocksDigest:string;readonly evidenceKind:'JOURNALED_NO_PORTABLE_WRITES'|'LEGACY_PRECOMMIT_STAGING';readonly stagingRefs:readonly {id:string;digest:string;bytes:number}[]}
+export interface ProjectRuntimeImportRecoveryProposal {readonly id:string;readonly taskId:string;readonly sourceRevision:number;readonly sourceStateDigest:string;readonly namespaceDigest:string;readonly oldLocksDigest:string;readonly evidenceKind:'JOURNALED_NO_PORTABLE_WRITES'|'LEGACY_PRECOMMIT_STAGING'|'SEALED_PUBLISHED_CANDIDATE';readonly stagingRefs:readonly {id:string;digest:string;bytes:number}[]}
 interface ImportRecoveryPrepared {proposal:ProjectRuntimeImportRecoveryProposal;data:string;repo:string;taskRoot:string;ledger:StoredLedger;payload:RuntimeRootBindingPayload;oldTask:LockRecord;oldWorkspace:LockRecord;taskPath:string;workspacePath:string;namespace:ReturnType<typeof projectHandoffNamespaceManifest>;inspect:ArtifactInspection;session:string;request?:TrustedConfirmationRequest}
 const importRecoveries=new WeakMap<object,ImportRecoveryPrepared>();
 function regularJson(path:string,max=1024*1024):{raw:Uint8Array;value:any}{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>max||realpathSync(path)!==path)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_EVIDENCE_INVALID');const raw=readFileSync(path);return {raw,value:parseJson(raw,max)}}
@@ -215,9 +215,10 @@ function exactLock(path:string,kind:'TASK'|'WORKSPACE',workspaceHash:string,task
   ||!/^import-[a-f0-9-]{36}$/.test(value.runtimeGeneration)||!validateScalar('Text',value.ownerSessionId).ok||!validateScalar('Time',value.acquiredAt).ok||!/^[-a-f0-9]{36}$/.test(value.token))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_LOCK_INVALID');
  if(inspectProcessOwner(value.processIncarnation).status!=='DEAD')fail('PROJECT_RUNTIME_IMPORT_RECOVERY_OWNER_NOT_DEAD');return value;
 }
-/** Narrow read-only recovery for a dead import that never committed ownership.
- * It never edits old approval/state bytes or treats a staged state as history.
- * Unrecognized partial staging and already-committed ownership stay blocked. */
+/** Read-only proposal for an uncommitted import, or for exporting an exact
+ * published candidate after its imported owner died. The latter grants only a
+ * saved-data release; all new execution requires a separate restored copy.
+ * Old approval/state bytes remain unchanged and staged state never becomes history. */
 export function prepareProjectRuntimeImportRecovery(dataRoot:string,repoRoot:string,taskId:string,session:string,inspect:ArtifactInspection):ProjectRuntimeImportRecoveryProposal|undefined{
  const storage=resolveProjectStorage(dataRoot,repoRoot);if(!storage.custodian)return undefined;
  if(!validateScalar('ID',taskId).ok||!validateScalar('Text',session).ok||typeof inspect!=='function')fail('PROJECT_RUNTIME_IMPORT_INPUT_INVALID');
@@ -232,12 +233,40 @@ export function prepareProjectRuntimeImportRecovery(dataRoot:string,repoRoot:str
  if(pointer.schemaVersion!==1||!validateScalar('Hash',pointer.descriptorDigest).ok||Object.keys(pointer).sort().join(',')!=='descriptorDigest,schemaVersion')fail('PROJECT_RUNTIME_IMPORT_RECOVERY_EVIDENCE_INVALID');
  const sealed=regularJson(join(repo,'.controlled-dev','handoffs',pointer.descriptorDigest+'.json'),64*1024*1024),seal=sealed.value;
  if(hashBytes(sealed.raw)!==pointer.descriptorDigest||canonicalize(seal)!==Buffer.from(sealed.raw).toString('utf8')||seal.schemaVersion!==1||seal.projectId!==storage.projectId
-  ||seal.originalRepoRoot!==storage.custodian.originalRepoRoot||seal.ownerDisposition!=='RELEASED_FOR_TRANSFER'||seal.quiescence!=='VERIFIED'||!Array.isArray(seal.namespaceManifest)
+  ||seal.originalRepoRoot!==storage.custodian.originalRepoRoot||!['RELEASED_FOR_TRANSFER','LEASE_HELD_CHECKPOINT'].includes(seal.ownerDisposition)||seal.quiescence!=='VERIFIED'||!Array.isArray(seal.namespaceManifest)
   ||!Array.isArray(seal.taskHeads)||!seal.taskHeads.some((h:any)=>h.taskId===taskId&&h.stateRevision===state.revision&&h.stateDigest===hashCanonical(state)&&h.eventHash===ledger.events.at(-1)!.eventHash&&h.specHash===state.specHash))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_HEAD_CHANGED');
  const git=new CandidateGit(repo,data);git.assertTarget(git.target(),seal.sourceHead);if(git.tree(seal.sourceHead)!==seal.sourceTree)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_SOURCE_CHANGED');
  const namespace=projectHandoffNamespaceManifest(repo),currentByPath=new Map(namespace.map(f=>[f.path,f])),prior=new Map<string,any>(seal.namespaceManifest.map((f:any)=>[f.path,f]));
  if(prior.size!==seal.namespaceManifest.length||seal.namespaceManifest.some((f:any)=>!currentByPath.has(f.path)||!same(currentByPath.get(f.path),f)))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_NAMESPACE_CHANGED');
  const extras=namespace.filter(f=>!prior.has(f.path)),prefix=relative(repo,join(taskRoot,'artifacts'))+'/';
+ if(seal.ownerDisposition==='LEASE_HELD_CHECKPOINT'){
+  const verified=readProjectHandoffForRuntimeImport(repo);
+  if(!verified||verified.record.descriptorDigest!==pointer.descriptorDigest||verified.humanChanges.length||seal.kind!=='CHECKPOINT'||seal.ownerSessionId!==oldWorkspace.ownerSessionId||seal.runtimeGeneration!==oldWorkspace.runtimeGeneration)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_HEAD_CHANGED');
+  // Recover saved DATA only. A finished model run does not prove that every
+  // old host command stopped. Future execution must use a freshly restored copy
+  // and fresh checks; the old worktree is deliberately never inspected/reused.
+  if(extras.length||state.state!=='TESTING'||!state.runtimeBindingRef||!state.candidate||oldTask.ownerSessionId!==state.ownerSessionId)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_HEAD_CHANGED');
+  const tasks=join(storage.projectRoot,'tasks');for(const id of readdirSync(tasks)){const l=DurableStore.load(join(tasks,id));if(l.truncatedTailBytes||l.state.runs.some(r=>!runQuiescent(r)))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_NOT_QUIESCENT')}
+  const checkpoint=verifyCandidateCheckpoint(repo,taskRoot,data,state),descriptor=relative(join(repo,'.controlled-dev'),checkpoint.descriptorPath);
+  if(!seal.candidateDescriptors.includes(descriptor))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_HEAD_CHANGED');
+  const bindingRecord=ledger.records.find(r=>r.id===state.runtimeBindingRef!.id&&r.kind==='ArtifactRef');
+  if(bindingRecord?.kind!=='ArtifactRef'||!same(bindingRecord.value,state.runtimeBindingRef))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_EVIDENCE_INVALID');
+  const binding=parseJson(DurableStore.readArtifact(taskRoot,state.runtimeBindingRef),64*1024*1024) as any,payload=checkRuntimeRootBindingPayload(binding.payload);
+  if(binding.id!==state.runtimeBindingRef.id||payload.repoRoot!==repo||payload.taskId!==taskId||payload.projectId!==storage.projectId||payload.specHash!==state.specHash
+   ||payload.candidateRoot!==state.candidate.root||payload.sourceHead!==seal.sourceHead||payload.sourceTree!==seal.sourceTree
+   ||payload.sourceInventoryDigest!==inventoryHash(inventoryTree(repo,['.git','node_modules'])))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_EVIDENCE_INVALID');
+  const reservedRoot=join(data,'controlled-dev','runtime-imports');
+  if(!existsSync(reservedRoot)||realpathSync(reservedRoot)!==reservedRoot||lstatSync(reservedRoot).isSymbolicLink())fail('PROJECT_RUNTIME_IMPORT_RECOVERY_JOURNAL_REQUIRED');
+  const reserved=readdirSync(reservedRoot).filter(n=>/^import-[a-f0-9-]{36}-reserved\.json$/.test(n)).map(n=>regularJson(join(reservedRoot,n)).value)
+   .filter(j=>j.phase==='RESERVED'&&j.taskRoot===taskRoot&&j.sessionId===state.ownerSessionId&&same(j.taskLock,oldTask)&&same(j.workspaceLock,oldWorkspace)&&same(j.payload,payload));
+  if(reserved.length!==1)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_JOURNAL_REQUIRED');
+  const takeovers=ledger.records.filter(r=>r.kind==='ArtifactRef'&&r.value.mediaType==='application/vnd.pi-controlled-dev.takeover+json').map(r=>parseJson(DurableStore.readArtifact(taskRoot,(r as any).value),1024*1024) as any)
+   .filter(v=>v.classification==='VERIFIED_PORTABLE_IMPORT'&&v.sessionId===state.ownerSessionId&&same(v.taskLock,oldTask)&&same(v.workspaceLock,oldWorkspace)&&same(v.runtimeBindingRef,state.runtimeBindingRef));
+  if(takeovers.length!==1||!ledger.events.some(e=>e.recordType==='RECONCILED'&&e.evidenceRefs.includes(takeovers[0].id)&&e.evidenceRefs.includes(state.runtimeBindingRef!.id)))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_EVIDENCE_INVALID');
+  const proposal=Object.freeze({id:`import-recovery-${randomUUID()}`,taskId,sourceRevision:state.revision,sourceStateDigest:hashCanonical(state),namespaceDigest:hashCanonical(namespace),oldLocksDigest:hashCanonical([oldTask,oldWorkspace]),evidenceKind:'SEALED_PUBLISHED_CANDIDATE' as const,stagingRefs:Object.freeze([])});
+  importRecoveries.set(proposal,{proposal,data,repo,taskRoot,ledger,payload,oldTask,oldWorkspace,taskPath,workspacePath,namespace,inspect,session});return proposal;
+ }
+
  if(extras.some(f=>!f.path.startsWith(prefix)||f.path.slice(prefix.length).includes('/')))fail('PROJECT_RUNTIME_IMPORT_RECOVERY_NAMESPACE_CHANGED');
  let payload:RuntimeRootBindingPayload|undefined,evidenceKind:ProjectRuntimeImportRecoveryProposal['evidenceKind'];
  if(extras.length===0){
@@ -294,8 +323,11 @@ export function prepareProjectRuntimeImportRecovery(dataRoot:string,repoRoot:str
 }
 export function projectRuntimeImportRecoveryRequest(proposal:ProjectRuntimeImportRecoveryProposal):TrustedConfirmationRequest{
  const p=importRecoveries.get(proposal);if(!p)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_PROPOSAL_INVALID');
+ const saved=proposal.evidenceKind==='SEALED_PUBLISHED_CANDIDATE';
  return p.request??=createTrustedConfirmationRequest({purpose:'project-runtime-import',subjectKind:'failed-project-import',subjectId:proposal.taskId,subjectRevision:proposal.sourceRevision,action:'APPROVE',payload:proposal as unknown as Json,
-  presentation:{title:"Close the interrupted resume without starting agents?",content:`The previous instance terminated, and its permission pair was physically identified. Revision ${proposal.sourceRevision} is still the saved revision: no new event was accepted.\nPreserved evidence: ${proposal.stagingRefs.length} prepared documents; ${proposal.evidenceKind==='LEGACY_PRECOMMIT_STAGING'?"the previous version had no write-ahead journal.":"the write-ahead journal identifies this operation."}\nThis confirmation only removes those dead permissions and saves a new verified closure. It does not acquire the work or approve changes: resuming requires a second, new confirmation. The plan, evidence and used attempts remain preserved.`}});
+  presentation:{title:saved?"Preserve saved work and prepare a separate copy?":"Close the interrupted resume without starting agents?",content:saved?
+   `The previous Pi process terminated. The saved candidate and all saved model results are verified at revision ${proposal.sourceRevision}. All recorded model runs for this project have ended.\nThis decision closes only the old local permissions and preserves the exact checkpoint for a new, separate working copy. It does not resume the old working folder or treat old host commands as proven stopped.\nThe plan, source code, candidate, evidence and used attempts remain unchanged. Resuming requires another local confirmation, a fresh copy and new checks before review. No agent starts with this confirmation.`:
+   `The previous instance terminated, and its permission pair was physically identified. Revision ${proposal.sourceRevision} is still the saved revision: no new event was accepted.\nPreserved evidence: ${proposal.stagingRefs.length} prepared documents; ${proposal.evidenceKind==='LEGACY_PRECOMMIT_STAGING'?"the previous version had no write-ahead journal.":"the write-ahead journal identifies this operation."}\nThis confirmation only removes those dead permissions and saves a new verified closure. It does not acquire the work or approve changes: resuming requires a second, new confirmation. The plan, evidence and used attempts remain preserved.`}});
 }
 export function recoverProjectRuntimeImport(proposal:ProjectRuntimeImportRecoveryProposal,receipt:TrustedConfirmationReceipt):void{
  const p=importRecoveries.get(proposal);if(!p||!p.request)fail('PROJECT_RUNTIME_IMPORT_RECOVERY_PROPOSAL_INVALID');
@@ -311,7 +343,7 @@ export function recoverProjectRuntimeImport(proposal:ProjectRuntimeImportRecover
  if(receipt.confirmationInstance.sessionId!==p.session)fail('PROJECT_RUNTIME_IMPORT_SESSION_CHANGED');
  const root=join(p.data,'controlled-dev','locks'),auditRoot=journalRoot(p.data),persist=(suffix:string,value:unknown)=>{const fd=openSync(join(auditRoot,proposal.id+suffix+'.json'),'wx',0o600);try{writeFileSync(fd,canonicalize(value));fsyncSync(fd)}finally{closeSync(fd)}syncDirectory(auditRoot)};
  withRepairMutation(root,p.oldTask.workspaceHash,retain=>{let complete=false;try{
-  check();persist('-reclaim-authorized',{schemaVersion:1,proposal,previousTaskLock:p.oldTask,previousWorkspaceLock:p.oldWorkspace,confirmationRef,confirmationEvidence:JSON.parse(Buffer.from(staged.get(confirmationRef.id)!.raw).toString('utf8')),automaticResumeAllowed:false});
+  check();persist('-reclaim-authorized',{schemaVersion:1,proposal,previousTaskLock:p.oldTask,previousWorkspaceLock:p.oldWorkspace,confirmationRef,confirmationEvidence:JSON.parse(Buffer.from(staged.get(confirmationRef.id)!.raw).toString('utf8')),recoveryScope:proposal.evidenceKind==='SEALED_PUBLISHED_CANDIDATE'?'SAVED_DATA_FOR_FRESH_COPY':'UNCOMMITTED_IMPORT',previousHostCommands:'NOT_ASSUMED_TERMINAL',automaticResumeAllowed:false});
   unlinkSync(p.taskPath);syncDirectory(dirname(p.taskPath));unlinkSync(p.workspacePath);syncDirectory(dirname(p.workspacePath));persist('-pair-reclaimed',{schemaVersion:1,id:proposal.id,automaticResumeAllowed:false});complete=true;
  }finally{if(!complete)retain()}});
  const manager=new LockManager(p.data,p.session,`import-recovery-${randomUUID()}`),locks=manager.acquire(proposal.taskId,p.repo);

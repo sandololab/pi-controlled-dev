@@ -1,10 +1,10 @@
 # pi-controlled-dev
 
-**0.1.0-beta.2** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit human confirmations.
+**0.1.0-beta.4** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit human confirmations.
 
 Describe the software result you want. Review the proposed plan, choose supervised execution or approve bounded autonomy, and follow each task through implementation, verification and integration.
 
-**Development beta:** the portable checks have been verified through a complete run and final targeted reruns. Read the [validation status](docs/VALIDATION.md) for coverage, optional checks and remaining limits. Historical successful runs do not certify every current feature or platform.
+**Development beta:** the beta.4 portable suite passed a complete verification run on 21 October 2026. Read the [validation status](docs/VALIDATION.md) for coverage, optional checks and remaining limits. Historical successful runs do not certify every current feature or platform.
 
 The interface and agent guidance are in English. Documentation is available in [English](docs/README.md) and [Italiano](docs/it/README.md). See the complete [user manual](USER-MANUAL.md) / [manuale italiano](docs/it/USER-MANUAL.md).
 
@@ -33,12 +33,25 @@ These commands follow Pi 1.3.0's [package documentation](https://github.com/eare
 
 The Git installation follows the repository's default branch. To pin a verified revision, append `@COMMIT_SHA` to the Git source, replacing the placeholder with the desired commit. A pinned revision does not advance with later updates.
 
+To update an existing Git installation, close Pi normally, select the same Pi
+profile in your terminal, then run:
+
+```sh
+pi update git:github.com/sandololab/pi-controlled-dev
+```
+
+Restart Pi afterward. Local development edits do not update GitHub or an installed
+Git copy automatically. Update to beta.4 before reopening a project containing
+new asynchronous process evidence; shared saved copies require beta.3 or later.
+See [smaller saved copies](docs/CANDIDATE-STORAGE.md) and the
+[reliability plan](docs/RELIABILITY-PLAN.md) for the changes since beta.2.
+
 For an offline alternative, build a tarball with `npm pack --pack-destination "$HOME/Downloads"`, then install it:
 
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.2.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 ```
 
@@ -200,7 +213,7 @@ npm pack --dry-run
 The installation probe is separate:
 
 ```sh
-P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0-beta.2.tgz" \
+P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz" \
   node --test test/product-install.test.mjs
 ```
 

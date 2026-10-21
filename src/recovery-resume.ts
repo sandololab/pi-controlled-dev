@@ -1,3 +1,4 @@
+import { inspectHostCommandRecovery } from './host-command-recovery.js';
 import { scoutClarificationCoverage } from './scout-clarifications.js';
 import { projectRuntimeImportLease } from './project-runtime-import.js';
 import type { ProjectRuntimeImportCapability } from './project-runtime-import.js';
@@ -248,7 +249,7 @@ export function boundedDeveloperRecoveryData(ledger:StoredLedger,store:Pick<Dura
  let historicalApprovalBindingRef:ArtifactRef|undefined;
  if(s.invalidEvidenceIds.includes(approval!.id)){
    if(!mapping||!p||(!portable&&p.previousRepoRoot!==s.repoRoot)||p.repoRoot!==s.repoRoot||p.historicalRepoRoot!==spec.scope.repoRoot
-     ||(!portable&&p.resumeState!=='BLOCKED')||(portable&&!['BLOCKED','READY'].includes(p.resumeState))||p.sourceRevision<block!.revision||p.previousCandidateRoot!==null||p.candidateRoot!==null)deny();
+     ||!['BLOCKED','READY'].includes(p.resumeState)||p.sourceRevision<block!.revision||p.previousCandidateRoot!==null||p.candidateRoot!==null)deny();
    historicalApprovalBindingRef=s.runtimeBindingRef;
  }
  const oldGate=approval!.value as HumanGate;
@@ -312,7 +313,7 @@ export function classifyResumeAction(dataRoot:string,storeRoot:string):{action:R
     const gate=ledger.records.find(v=>v.id===s.pendingGateId&&v.kind==='HumanGate');
     action=gate?.kind==='HumanGate'&&gate.value.status==='PENDING'&&!ledger.records.some(v=>v.kind==='HumanDecisionEvidence'&&v.value.gateId===gate.value.id)?'HUMAN_ACTION_REQUIRED':'P16C_REPAIR_REQUIRED';
   }else if(s.state==='REVIEWING'&&reviewerRedispatchCheckpoint(ledger))action='RESUME_FROM_DURABLE_STATE';
-  else if(s.runtimeBindingRef&&s.state==='TESTING'&&s.candidate)action='RESUME_FROM_DURABLE_STATE';
+  else if(s.state==='TESTING'&&s.candidate&&(s.runtimeBindingRef||inspectHostCommandRecovery(storeRoot,ledger).supervisedTesting))action='RESUME_FROM_DURABLE_STATE';
   else if(['IMPLEMENTING','TESTING','REVIEWING','REWORK'].includes(s.state))action='P16C_REPAIR_REQUIRED';
   else if(s.state==='ANALYZING'){
     const run=[...s.runs].reverse().find(run=>run.role==='Scout'),result=ledger.records.find(v=>v.id===run?.resultRef&&v.kind==='ScoutResult');
@@ -368,6 +369,7 @@ export function takeOverWorkflow(dataRoot:string,storeRoot:string,sessionId:stri
   const incarnation=currentProcessIncarnation();if(!incarnation)throw new Error('OWNER_INCARNATION_UNAVAILABLE');
   const ledger=DurableStore.load(storeRoot),s=ledger.state;
   const reclaimed=recoverLocks(dataRoot,storeRoot),lockRoot=join(dataRoot,'controlled-dev','locks');
+  if(reclaimed.recovery.classification==='INTERRUPTED_WITH_UNKNOWN_CHILD'&&reclaimed.recovery.lockOwnerStatus==='DEAD'&&s.runs.every(runQuiescent)&&['IMPLEMENTING','TESTING','REVIEWING','REWORK'].includes(s.state))throw new Error('HOST_VERIFICATION_TERMINATION_UNPROVEN');
   const ids=reclaimed.auditId?[reclaimed.auditId]:readdirSync(lockRoot).filter(v=>/^recovery-[a-f0-9-]+\.json$/.test(v)).map(v=>v.slice(0,-5));
   let death:any,recoveryRecordId:string|undefined;
   for(const id of ids){try{const evidence=read(join(lockRoot,`${id}.json`)),done=read(join(lockRoot,`${id}-complete.json`));

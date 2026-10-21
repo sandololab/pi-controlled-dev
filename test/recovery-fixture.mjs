@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { installSourceLoader } from './load-source.mjs';
 import { fixtures, TIME } from './contract-fixtures.mjs';
 installSourceLoader();
@@ -50,6 +50,7 @@ export function recoveryFixture(root,phase='PENDING',runStatus='NONE') {
   return {repo,data,storeRoot:store.root,manager,locks};
 }
 export async function restartFixture(root,checkpoint='READY',resume=false,disposeBeforeExit=false,scoutConditions,memorySetup,options={}) {
+  const importedTesting=checkpoint==='IMPORTED_TESTING';if(importedTesting)checkpoint='TESTING';
   const boundedPending=checkpoint==='DEVELOPER_BOUNDED_PENDING';if(boundedPending)checkpoint='DEVELOPER_BOUNDED';
   const {registeredRoleDispatchers,presentHumanGate}=await import('../src/orchestrator.ts');
   const {RpcAdapter}=await import('../src/pi-subagents-rpc.ts');
@@ -183,6 +184,7 @@ export async function restartFixture(root,checkpoint='READY',resume=false,dispos
   const host=new OrchestratorHost('owner',registeredRoleDispatchers(runtime));
   const o=host.initialize(spec,{store,lockManager:manager,locks,artifacts:sourceArtifacts,baselineRef:'HEAD',baselineCommit:git('rev-parse','HEAD'),
     ...(['SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint)?{scopeGuardFactory(){throw new ScopeGuardError('SCOPE_BASELINE_INVALID')}}:{})});
+  options.onWorkflowCreated?.(o);
   const authorizeGate=async type=>{
     const a=memoryScenario?.autonomy;
     if(!a){const request=type==='beforeImplementation'?o.openBeforeImplementation(o.state.revision,'owner'):o.openBeforeCompletion(o.state.revision,'owner');
@@ -191,7 +193,7 @@ export async function restartFixture(root,checkpoint='READY',resume=false,dispos
     o.acceptPolicyAuthorization(request.snapshot,capability);
   };
   try{await o.analyze(0)}catch(error){if(!['UNKNOWN','SCOUT_INFRA'].includes(checkpoint))throw error}
-  if(['READY','AWAITING_HUMAN','FINAL_GATE','COMPLETED','REWORK_READY','REVIEWER_TIMEOUT','REVIEWER_NOT_DISPATCHED','REVIEWER_CRASH','DEVELOPER_INFRA','DEVELOPER_BOUNDED','REVIEWER_UNKNOWN','REWORK_EXHAUSTED','VALIDATION_REWORK','SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint))o.ready(o.state.revision);
+  if(['TESTING','READY','AWAITING_HUMAN','FINAL_GATE','COMPLETED','REWORK_READY','REVIEWER_TIMEOUT','REVIEWER_NOT_DISPATCHED','REVIEWER_CRASH','DEVELOPER_INFRA','DEVELOPER_BOUNDED','REVIEWER_UNKNOWN','REWORK_EXHAUSTED','VALIDATION_REWORK','SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint))o.ready(o.state.revision);
   if(options.productionDriver){
     const {continueProductionWorkflow}=await import('../src/production-bridge.ts');
     options.beforeDriver?.(o);const notifications=[];
@@ -204,9 +206,10 @@ export async function restartFixture(root,checkpoint='READY',resume=false,dispos
     const result=await continueProductionWorkflow(o,ctx);o.dispose();return {repo,data,storeRoot:store.root,state:o.state,result,notifications};
   }
   if(checkpoint==='AWAITING_HUMAN')o.openBeforeImplementation(o.state.revision,'owner');
-  if(['FINAL_GATE','COMPLETED','REWORK_READY','REVIEWER_TIMEOUT','REVIEWER_NOT_DISPATCHED','REVIEWER_CRASH','DEVELOPER_INFRA','DEVELOPER_BOUNDED','SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint)){
-    let work=memoryScenario?.candidateRoot??join(root,'candidate');
-    if(['SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint)){
+  if(['TESTING','FINAL_GATE','COMPLETED','REWORK_READY','REVIEWER_TIMEOUT','REVIEWER_NOT_DISPATCHED','REVIEWER_CRASH','DEVELOPER_INFRA','DEVELOPER_BOUNDED','SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint)){
+    let work=memoryScenario?.candidateRoot??(importedTesting?join(data,'controlled-dev','workspaces','import-fixture-candidate'):join(root,'candidate'));
+    if(importedTesting)mkdirSync(dirname(work),{recursive:true});
+    if(importedTesting||['SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint)){
       const {CandidatePromotionRepository}=await import('../src/candidate-promotion-repository.ts');
       const promotion=CandidatePromotionRepository.open(data,repo,()=> 'ACCEPT',{create:true,manager,workspaceLock:locks.workspace});
       promotion.initialize(spec,git('rev-parse','HEAD'));work=promotion.materialize(spec.taskId);
@@ -217,7 +220,25 @@ export async function restartFixture(root,checkpoint='READY',resume=false,dispos
     try{const developed=await o.implement(o.state.revision,work);if(developed.decision==='BLOCKED'){if(boundedPending)o.openBeforeBoundedDeveloperRecovery(o.state.revision,'owner');if(disposeBeforeExit)o.dispose();return {repo,data,storeRoot:store.root,locks,state:o.state,...(scoutConditions?{orchestrator:o,host,runtime}:{})}}}catch(error){if(!['DEVELOPER_INFRA','DEVELOPER_BOUNDED','SCOPE_BASELINE','SCOPE_PENDING'].includes(checkpoint))throw error;
       if(checkpoint==='SCOPE_PENDING')o.openBeforeScopeBaselineRecovery(o.state.revision,'owner');
       if(disposeBeforeExit)o.dispose();return {repo,data,storeRoot:store.root,locks,state:o.state,...(scoutConditions?{orchestrator:o,host,runtime}:{})}}
-    o.testing(o.state.revision);o.validateApproved(o.state.revision);
+    o.testing(o.state.revision);if(options.asyncValidation)await o.validateApprovedAsync(o.state.revision);else o.validateApproved(o.state.revision);
+    if(checkpoint==='TESTING'){
+      if(!importedTesting)return {repo,data,storeRoot:store.root,locks,state:o.state,orchestrator:o};
+      // Real process fixture for a validated candidate imported into a fresh
+      // profile. Human and provider doubles are explicit; locks and Git are real.
+      const h=await import('../src/project-handoff.ts'),im=await import('../src/project-runtime-import.ts');
+      const {captureCandidateCheckpointStaging}=await import('../src/candidate-checkpoints.ts');
+      const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
+      const native={mode:'tui',sessionManager:{getSessionId:()=> 'fixture-native'},ui:{confirm:async()=>true}};
+      const planning=DurableStore.project(data,repo,'planning',()=> 'ACCEPT',true),proposal=h.prepareProjectHandoff({repoRoot:repo,machineDataRoot:data});
+      const receipt=await presentTrustedConfirmation(native,h.projectHandoffRequest(proposal));
+      const cap=h.authorizeProjectHandoff(proposal,receipt,{store:planning,manager,workspaceLock:locks.workspace,assertQuiescent(){}});
+      let descriptors;h.completeProjectHandoff(cap,{captureCandidates(auth){descriptors=[captureCandidateCheckpointStaging(auth,store.root,{manager,workspaceLock:locks.workspace}).descriptorRelativePath];return descriptors}});
+      h.releaseProjectHandoff({repoRoot:repo,manager,workspaceLock:locks.workspace,assertQuiescent(){},candidateDescriptors:descriptors,retireAuthority(){manager.release(locks.task)}});
+      const freshData=join(root,'imported-profile');mkdirSync(freshData);
+      const p=im.prepareProjectRuntimeImport(freshData,repo,spec.taskId,'fixture-native',()=> 'ACCEPT'),q=im.projectRuntimeImportRequest(p),r=await presentTrustedConfirmation(native,q),imported=im.authorizeProjectRuntimeImport(p,r);
+      const {takeOverImportedWorkflow}=await import('../src/recovery-resume.ts');const next=CentralOrchestrator.restore(takeOverImportedWorkflow(imported),{});im.completeProjectRuntimeImport(imported);next.validateApproved(next.state.revision);
+      return {repo,data:freshData,storeRoot:im.projectRuntimeImportLease(imported).taskRoot,state:next.state};
+    }
     const c=o.candidateCapture;try{await o.review(o.state.revision,{candidateManifest:c.manifest,diff:c.patch,changedFiles:c.changedFiles,handoff:c.handoff,residualRisks:[],evidenceRefs:['source']})}catch(error){if(!['REVIEWER_TIMEOUT','REVIEWER_NOT_DISPATCHED'].includes(checkpoint))throw error;if(checkpoint==='REVIEWER_NOT_DISPATCHED')o.recordReviewerInfrastructureFailure(error,o.state.revision)}
     if(checkpoint==='FINAL_GATE'){o.resolveHostValidationRisks(o.state.revision);o.openBeforeCompletion(o.state.revision,'owner')}
     else if(checkpoint==='COMPLETED'){

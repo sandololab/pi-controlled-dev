@@ -17,7 +17,7 @@ const {DurableStore}=await import('../src/store.ts');
 const {rebuildProjectPlanningView,rebuildHumanView}=await import('../src/human-repository.ts');
 const {createProductionTask,readProductionTaskInput}=await import('../src/production-bridge.ts');
 const {preTaskRequest,validatePreTaskProposal,PreTaskScout,PreTaskProposalError,PRE_TASK_SCOUT_NAME}=await import('../src/pre-task-proposal.ts');
-const {validatePlanningScout,readRefinementScoutOutput,materializeRefinement,REFINEMENT_OUTPUT_SCHEMA,refinementPayloadBudget,REFINEMENT_PAYLOAD_BYTES}=await import('../src/project-planning-scout.ts');
+const {validatePlanningScout,readRefinementScoutOutput,materializeRefinement,REFINEMENT_OUTPUT_SCHEMA,refinementPayloadBudget,REFINEMENT_PAYLOAD_BYTES,previousPlanForScout}=await import('../src/project-planning-scout.ts');
 const {projectStatus,showProjectPlanning}=await import('../src/project-planning-ui.ts');
 const {restartFixture}=await import('./recovery-fixture.mjs');
 const {planningProposal}=await import('./greenfield-bootstrap-fixture.mjs');
@@ -32,6 +32,48 @@ function medium(){return {strategy:'Introduciamo un protocollo verificabile, poi
  task('conflicts','Risolvere modifiche concorrenti',['transfer']),task('ux','Mostrare lo stato dei peer',['discovery']),task('e2e','Verificare la sincronizzazione completa',['conflicts','ux'])]};}
 function draft(planning,p=medium(),goal=planning.goals().at(-1)??planning.createGoal('Aggiungere sincronizzazione locale alla piccola applicazione')){
  return planning.propose(goal.goalId,{proposal:p,analysis:{schemaVersion:1,goalDigest:goal.contentDigest,proposal:p}},planning.baseline());}
+test('PP previous-plan delivery uses Scout memory IDs without changing stored plan identity or contents',async t=>{
+  const fixtureData=fixture(t),memory=await memoryFixture(fixtureData);
+  const planning=Repository.open(fixtureData.data,fixtureData.repo,()=> 'ACCEPT',{memory});
+  const goal=planning.createGoal('Preserve the current architecture');
+  const selection=planning.planningMemory(goal,memory),proposal=medium();
+  proposal.plannedTasks[0].relevantMemoryRefs=selection.selected.map(item=>item.reference);
+  const plan=planning.propose(goal.goalId,{proposal,analysis:{goalDigest:goal.contentDigest},memorySelection:selection},planning.baseline());
+  const before=api.canonicalize(plan),context=previousPlanForScout(plan);
+  assert.equal(context.contentDigest,plan.contentDigest);
+  assert.equal(context.planId,plan.planId);
+  assert.deepEqual(context.plannedTasks[0].relevantMemoryIds,plan.plannedTasks[0].relevantMemoryRefs.map(reference=>reference.recordId));
+  assert.ok(context.plannedTasks[0].relevantMemoryIds.length>0);
+  assert.equal(Object.hasOwn(context.plannedTasks[0],'relevantMemoryRefs'),false);
+  context.plannedTasks[0].scopeIntent=['unrelated-delivery-mutation'];
+  assert.equal(api.canonicalize(plan),before);
+  assert.equal(previousPlanForScout(undefined),null);
+  const bus=new PlanningBus(fixtureData.root,fixtureData.repo);
+  bus.memoryIds=selection.selected.map(item=>item.reference.recordId);
+  const scout=new PreTaskScout(bus,'owner');t.after(()=>scout.close());
+  await scout.plan(fixtureData.repo,{goal,selection,previous:plan},memory);
+  const prompt=bus.requests.find(request=>request.method==='spawn').params.task;
+  const delivered=JSON.parse(prompt.split('\nPREVIOUS=')[1].split('\nCORRECTION=')[0]);
+  assert.deepEqual(delivered,previousPlanForScout(plan));
+  assert.match(prompt,/never return the stored relevantMemoryRefs field/);
+  assert.equal(api.canonicalize(plan),before);
+});
+test('PP human views distinguish unanswered context, current draft tasks and removed draft tasks',t=>{
+ const {planning}=fixture(t);let goal=planning.createGoal('Preserve this unique objective exactly once');
+ goal=planning.saveClarifications(goal,[{questionId:'context-question',question:'Which environment?',why:'Verification requires a known environment.',answer:null}]);
+ rebuildProjectPlanningView(planning);const human=join(planning.projectRoot,'human'),project=()=>readFileSync(join(human,'Project.md'),'utf8');
+ assert.match(project(),/No plan has been proposed yet/);assert.match(project(),/Answer the saved questions/);
+ assert.equal(project().split(goal.objective).length,2);assert.doesNotMatch(project(),/only drafts|Approve a draft/);assert.equal(planning.history().length,0);
+ assert.throws(()=>draft(planning,medium(),goal),/PROJECT_CONTEXT_INCOMPLETE/);
+ goal=planning.saveClarifications(goal,[{...goal.clarifications[0],answer:'Use the approved test environment.'}]);
+ draft(planning,medium(),goal);rebuildProjectPlanningView(planning);
+ const note=id=>readFileSync(join(human,'Planning','Planned Tasks',`Attività ${id}.md`),'utf8');
+ assert.match(note('protocol'),/status: "DRAFT"/);assert.match(note('protocol'),/revision: 1/);assert.match(note('protocol'),/cannot start before plan approval/);
+ assert.doesNotMatch(note('protocol'),/task is historical/);assert.equal(planning.current(),undefined);
+ const reduced=medium();reduced.plannedTasks=reduced.plannedTasks.filter(task=>!['ux','e2e'].includes(task.plannedTaskId));draft(planning,reduced,goal);rebuildProjectPlanningView(planning);
+ assert.match(note('protocol'),/status: "DRAFT"/);assert.match(note('protocol'),/revision: 2/);assert.match(note('ux'),/status: "HISTORICAL"/);
+ assert.equal(planning.current(),undefined);assert.equal(planning.links().length,0);
+});
 async function approved(planning,p=medium()){const plan=draft(planning,p);return planning.approve(ui(),plan.revision);}
 function refinementOutput(request,mode){
  const target=mode.previous.plannedTasks.find(t=>t.plannedTaskId===mode.refinement.targetTaskId);

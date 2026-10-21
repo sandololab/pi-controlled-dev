@@ -66,7 +66,7 @@ test('realistic fixture builds readable task, scenario, run, evidence, review an
   const all=markdownFiles(result.vaultRoot).map(path=>readFileSync(join(result.vaultRoot,path),'utf8')).join('\n');
   for(const heading of ['# Controlled Dev','# Scenario —','# Run —','# Evidence —','# Review —','# Decision —'])assert.match(all,new RegExp(heading));
   assert.match(all,/\[\[Scenario /);assert.match(all,/What we cannot conclude/);assert.doesNotMatch(all,new RegExp(store.root.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
-  for(const file of readdirSync(join(result.vaultRoot,'Indexes')))assert.match(readFileSync(join(result.vaultRoot,'Indexes',file),'utf8'),/^filters:\n[\s\S]*views:\n/);
+  for(const file of readdirSync(join(result.vaultRoot,'Indexes')).filter(name=>name.endsWith('.base')))assert.match(readFileSync(join(result.vaultRoot,'Indexes',file),'utf8'),/^filters:\n[\s\S]*views:\n/);
 });
 
 test('human projection explains facts in context without moving technical authority into prose',t=>{
@@ -102,6 +102,32 @@ test('human projection explains facts in context without moving technical author
 test('design rationale is omitted when no Developer decision was recorded',t=>{
   const {store}=fixture(t,{designRationale:false}),{vaultRoot}=human.rebuildHumanView(store.root);
   assert.doesNotMatch(readFileSync(join(vaultRoot,'Tasks','Task task.md'),'utf8'),/## Design choices/);
+});
+test('personal notes have a discoverable parent and untouched old templates gain backlinks while personal edits stay byte-exact',t=>{
+  const {store}=fixture(t),{vaultRoot}=human.rebuildHumanView(store.root);
+  const home=readFileSync(join(vaultRoot,'Home.md'),'utf8'),indexPath=join(vaultRoot,'Indexes','Personal Notes.md');
+  assert.match(home,/\[\[Indexes\/Personal Notes\|All personal notes\]\]/);
+  assert.match(readFileSync(indexPath,'utf8'),/\[\[Notes\/task-task-notes\|Notes: Calcolo controllato\]\].*\[\[Tasks\/Task task\|Related page\]\]/);
+  for(const name of readdirSync(join(vaultRoot,'Notes')).filter(name=>name.endsWith('.md'))){
+    const text=readFileSync(join(vaultRoot,'Notes',name),'utf8'),match=text.match(/\[\[([^|]+)\|Back to the related page\]\]/);
+    assert.ok(match,name);assert.ok(existsSync(join(vaultRoot,match[1]+'.md')),name);
+  }
+  const taskNote=join(vaultRoot,'Notes','task-task-notes.md'),original=readFileSync(taskNote,'utf8');
+  writeFileSync(taskNote,original.split('# Personal notes')[0]+'# Annotazioni personali\n\nQuesto spazio è tuo. La rigenerazione automatica non modifica questo file.\n');
+  const personal=join(vaultRoot,'Notes','scenario-check-notes.md'),personalBytes=Buffer.from(readFileSync(personal,'utf8')+'\nLa mia osservazione personale: non modificarla.\n');
+  writeFileSync(personal,personalBytes);const before=DurableStore.load(store.root);
+  human.rebuildHumanView(store.root);
+  assert.match(readFileSync(taskNote,'utf8'),/\[\[Tasks\/Task task\|Back to the related page\]\]/);
+  assert.deepEqual(readFileSync(personal),personalBytes);assert.deepEqual(DurableStore.load(store.root),before);
+  const index=readFileSync(indexPath);human.rebuildHumanView(store.root);assert.deepEqual(readFileSync(indexPath),index);
+});
+
+test('empty project memory has a readable collection without creating authoritative memory records',t=>{
+  const {store}=fixture(t),memoryRoot=join(store.root,'..','..','memory');assert.equal(existsSync(memoryRoot),false);
+  const {vaultRoot}=human.rebuildHumanView(store.root),text=readFileSync(join(vaultRoot,'Indexes','Project Memory.md'),'utf8');
+  assert.match(text,/No technical memories are registered/);assert.match(text,/separate from the saved plan, task status and execution history/);
+  assert.match(readFileSync(join(vaultRoot,'Home.md'),'utf8'),/\[\[Indexes\/Project Memory\|Project technical memory\]\]/);
+  assert.equal(existsSync(memoryRoot),false);
 });
 
 test('generation is deterministic, preserves separate human notes and Markdown cannot change authority',t=>{

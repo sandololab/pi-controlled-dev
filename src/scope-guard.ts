@@ -233,6 +233,21 @@ function changesBetween(before:ReadonlyMap<string,Entry>,after:ReadonlyMap<strin
 function sameEntry(a:Entry,b:Entry):boolean{return a.kind===b.kind&&a.mode===b.mode&&a.contentHash===b.contentHash}
 /** Independently reconstruct the P11 patch from host-observed roots, including untracked/binary bytes. */
 export function workspacePatch(repoRoot:string,workRoot:string):string{return buildPatch(scanTracked(repoRoot),scan(workRoot))}
+/** Reconstruct the canonical patch from already acquired manifests. Read bytes
+ * only for actual writes, checking each against the exact acquired content hash.
+ * This is data verification, not permission to apply the patch. */
+export function workspacePatchFromManifests(workRoot:string,before:CandidateManifest,after:CandidateManifest):string {
+  if(!validateContract('CandidateManifest',before).ok||!validateContract('CandidateManifest',after).ok||before.baseCommit!==after.baseCommit)fail('SCOPE_PATCH_INVALID');
+  const oldEntries=new Map(before.entries.map(entry=>[entry.path,entry])),newEntries=new Map<string,Entry>(after.entries.map(entry=>[entry.path,entry]));
+  for(const change of changesBetween(oldEntries,newEntries)){
+    if(change.kind==='DELETE')continue;const entry=newEntries.get(change.path)!;
+    if(entry.kind!=='FILE')fail('SCOPE_PATCH_INVALID');
+    const path=join(workRoot,...entry.path.split('/')),stat=lstatSync(path);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||realpathSync(path)!==path||(stat.mode&0o111?'100755':'100644')!==entry.mode)fail('SCOPE_WORKSPACE_CHANGED');
+    const bytes=readFileSync(path);if(sha(bytes)!==entry.contentHash)fail('SCOPE_WORKSPACE_CHANGED');newEntries.set(entry.path,Object.freeze({...entry,bytes}));
+  }
+  return buildPatch(oldEntries,newEntries);
+}
 function buildPatch(before:ReadonlyMap<string,Entry>,after:ReadonlyMap<string,Entry>):string{
   const operations=changesBetween(before,after).flatMap(change=>{
     if(change.kind==='RENAME')return [{op:'delete',path:change.fromPath},{op:'write',path:change.path,mode:after.get(change.path)!.mode,hex:hex(after.get(change.path)!.bytes!)}];
@@ -259,13 +274,18 @@ function applyPatch(root:string,patch:string):void{
   for(const op of value.operations){validatePath(op.path);if(isFixedDenied(op.path))fail('SCOPE_VIOLATION');const full=join(root,...op.path.split('/'));
     if(op.op==='delete')unlinkSync(full);else{mkdirSync(dirname(full),{recursive:true});writeFileSync(full,unhex(op.hex!));chmodSync(full,op.mode==='100755'?0o755:0o644)}}
 }
+const verifiedPatchRounds=new WeakMap<object,Set<string>>();
+/** A round-trip proof belongs to immutable private baseline bytes and exact
+ * patch/manifest bytes. Live workspace, scope and source checks always run first. */
 function verifyPatch(baseline:ReadonlyMap<string,Entry>,patch:string,expected:CandidateManifest):void{
+  const key=hashCanonical({patch,expected});if(verifiedPatchRounds.get(baseline)?.has(key))return;
   const root=mkdtempSync(join(tmpdir(),'controlled-scope-roundtrip-'));
   try{
     for(const entry of baseline.values()){if(entry.kind!=='FILE')continue;const full=join(root,...entry.path.split('/'));mkdirSync(dirname(full),{recursive:true});writeFileSync(full,entry.bytes!);chmodSync(full,entry.mode==='100755'?0o755:0o644)}
     applyPatch(root,patch);
     if(canonicalize(manifestOf(expected.baseCommit,scan(root)))!==canonicalize(expected))fail('SCOPE_PATCH_INVALID');
   }catch(error){if(error instanceof ScopeGuardError)throw error;fail('SCOPE_PATCH_INVALID')}finally{rmSync(root,{recursive:true,force:true})}
+  const proofs=verifiedPatchRounds.get(baseline)??new Set<string>();if(proofs.size>=64){const oldest=proofs.values().next().value;if(oldest!==undefined)proofs.delete(oldest)}proofs.add(key);verifiedPatchRounds.set(baseline,proofs);
 }
 function parentIdentities(root:string,paths:readonly string[]):readonly DirIdentity[]{const unique=new Set<string>();for(const path of paths){let p=dirname(path);while(p!=='.'){unique.add(p);p=dirname(p)}}
   return Object.freeze([...unique].sort(compareUtf8).filter(path=>{try{return lstatSync(join(root,...path.split('/'))).isDirectory()}catch{return false}}).map(path=>{const s=lstatSync(join(root,...path.split('/')));return Object.freeze({path,dev:s.dev,ino:s.ino})}))}

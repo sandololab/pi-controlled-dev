@@ -26,7 +26,7 @@ export async function requestHumanConfirmation(ctx:HumanConfirmationChannel,disp
   }catch{return undefined}
 }
 
-export type ConfirmationPurpose='task-human-gate'|'project-memory-approval'|'project-plan-approval'|'candidate-promotion'|'integration-checkpoint'|'greenfield-bootstrap'|'source-project-import'|'current-project-setup'|'project-autonomy-policy-approval'|'scout-clarification'|'project-handoff'|'project-runtime-import';
+export type ConfirmationPurpose='task-human-gate'|'project-memory-approval'|'project-plan-approval'|'candidate-promotion'|'integration-checkpoint'|'greenfield-bootstrap'|'source-project-import'|'current-project-setup'|'project-autonomy-policy-approval'|'scout-clarification'|'project-handoff'|'project-runtime-import'|'project-storage-optimization';
 export type ConfirmationAction='APPROVE'|'REJECT'|'ANSWER';
 export interface TrustedConfirmationInput {
   readonly purpose:ConfirmationPurpose; readonly subjectKind:string; readonly subjectId:string;
@@ -59,7 +59,7 @@ function scalar(kind:'ID'|'UInt'|'Hash'|'Time'|'Text',v:unknown):void{if(!valida
 function checkedRequest(input:unknown):TrustedConfirmationRequest{
   const v=copyJson(input) as unknown as TrustedConfirmationRequest;
   closed(v,['schemaVersion','confirmationId','purpose','subjectKind','subjectId','subjectRevision','action','payload','payloadDigest','presentation']);
-  if(v.schemaVersion!==1||!['task-human-gate','project-memory-approval','project-plan-approval','candidate-promotion','integration-checkpoint','greenfield-bootstrap','source-project-import','current-project-setup','project-autonomy-policy-approval','scout-clarification','project-handoff','project-runtime-import'].includes(v.purpose)||!['APPROVE','REJECT','ANSWER'].includes(v.action))fail('TRUSTED_CONFIRMATION_INVALID');
+  if(v.schemaVersion!==1||!['task-human-gate','project-memory-approval','project-plan-approval','candidate-promotion','integration-checkpoint','greenfield-bootstrap','source-project-import','current-project-setup','project-autonomy-policy-approval','scout-clarification','project-handoff','project-runtime-import','project-storage-optimization'].includes(v.purpose)||!['APPROVE','REJECT','ANSWER'].includes(v.action))fail('TRUSTED_CONFIRMATION_INVALID');
   scalar('ID',v.confirmationId);scalar('ID',v.subjectKind);scalar('ID',v.subjectId);scalar('UInt',v.subjectRevision);scalar('Hash',v.payloadDigest);
   closed(v.presentation,['title','content']);scalar('Text',v.presentation.title);
   // Reject text the native renderer would sanitize, so persisted text is the exact logical display.

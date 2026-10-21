@@ -9,6 +9,43 @@ installSourceLoader();
 const {taskWizard}=await import('../src/task-wizard.ts');
 const {compileValidations}=await import('../src/validation-proposals.ts');
 const {chooseAction,confirmChoice,displayLines,safeText,errorPresentation,showStatus,withProgress,serializeControlledPanels}=await import('../src/controlled-ui.ts');
+test('interrupted storage checks explain the safe next step and retain bounded diagnostics',()=>{
+  const view=errorPresentation(Object.assign(new Error('STORE_NAMESPACE_CHANGED'),{code:'STORE_NAMESPACE_CHANGED',diagnostic:{phase:'FILE_READ',path:'artifacts/record',secret:'not for display'}}));
+  assert.match(view.message,/Close Pi normally/);
+  assert.deepEqual(view.diagnostic,{phase:'FILE_READ',path:'artifacts/record'});
+  assert.equal(errorPresentation(Object.assign(new Error('STORE_NAMESPACE_CHANGED'),{diagnostic:{phase:'invalid\nphase',path:'record'}})).diagnostic,undefined);
+  assert.match(errorPresentation(new Error('HUMAN_GATE_REOPEN_REQUIRED')).message,/confirmation is still saved/);
+});
+test('unsupported project entries explain the local service issue without requesting a new baseline',()=>{
+ const view=errorPresentation(new Error('CANARY_UNSUPPORTED_ENTRY'));
+ assert.equal(view.code,'CANARY_UNSUPPORTED_ENTRY');assert.match(view.message,/socket, pipe/);
+ assert.match(view.message,/Stop the local service/);assert.match(view.message,/baseline may already be saved/);
+ assert.doesNotMatch(view.message,/delete|recreate|disable/i);
+});
+test('a rejected pre-task proposal identifies a bounded field without exposing response text',()=>{
+  const view=errorPresentation(Object.assign(new Error('PRE_TASK_PROPOSAL_INVALID'),{
+    diagnostic:{validationPath:'$.validations[0].configPath',response:'private response content'},
+  }));
+  assert.match(view.message,/consistency check/);
+  assert.equal(view.path,'$.validations[0].configPath');
+  assert.match(view.message,/Response field:/);
+  assert.doesNotMatch(view.message,/private response content/);
+  for(const validationPath of ['field\n\u001b[31m','private response content','$.'+'x'.repeat(300)]){
+    const invalid=errorPresentation(Object.assign(new Error('PRE_TASK_PROPOSAL_INVALID'),{diagnostic:{validationPath}}));
+    assert.equal(invalid.path,undefined);
+  }
+});
+test('connection diagnostics describe the observed transport failure without claiming verified termination',()=>{
+  for(const [providerError,description] of [['FETCH_FAILED','fetch failed'],['WEBSOCKET_ERROR','WebSocket connection failed'],['TERMINATED','connection ended unexpectedly']]){
+    const diagnostic={providerFailure:'CONNECTION_FAILED',providerError};
+    const uncertain=errorPresentation(Object.assign(new Error('PRE_TASK_PROPOSAL_UNCERTAIN'),{diagnostic}));
+    assert.ok(uncertain.message.includes(description));
+    assert.match(uncertain.message,/termination has not yet been verified/);
+    const terminal=errorPresentation(Object.assign(new Error('PRE_TASK_PROVIDER_CONNECTION_FAILED'),{diagnostic}));
+    assert.ok(terminal.message.includes(description));
+    assert.match(terminal.message,/No usable proposal was accepted/);
+  }
+});
 test('concurrent consultation cannot replace a native confirmation; cloned adapters share the viewport queue',async()=>{
  const opened=[],done=[];let active=0,maximum=0;
  const raw={custom:async factory=>{active++;maximum=Math.max(maximum,active);opened.push(factory);return new Promise(resolve=>done.push(value=>{active--;resolve(value)}))}};

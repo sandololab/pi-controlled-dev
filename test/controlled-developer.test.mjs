@@ -68,6 +68,11 @@ function fakeHost({ws,result,mutate=()=>writeFileSync(join(ws.work,'allowed.txt'
       assert.match(request.params.task,/risk id host-validation-pending, blocking:false/);
       assert.match(request.params.task,/Preserve any other genuine risks separately/);
       assert.match(request.params.task,/Software design and code quality/);
+      assert.match(request.params.task,/Name variables for the values they hold, functions for the operations they perform, and classes for their cohesive responsibility/);
+      assert.match(request.params.task,/timeoutMs.*sampleRateHz/);
+      assert.match(request.params.task,/Do not compress several decisions or mutations onto one line/);
+      assert.match(request.params.task,/provide or update a concise module comment or module docstring/);
+      assert.match(request.params.task,/Keep comments consistent with the implementation/);
       assert.match(request.params.task,/Architecture finding or Design expectation/);
       assert.match(request.params.task,/Design rationale:/);
       spawns++;run='run-1';reply({text:'spawned',details:{asyncId:run,runId:run}});queueMicrotask(()=>{

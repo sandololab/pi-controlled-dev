@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {appendFileSync,chmodSync,existsSync,mkdirSync,mkdtempSync,readFileSync,renameSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
+import {appendFileSync,chmodSync,existsSync,mkdirSync,mkdtempSync,readFileSync,renameSync,rmSync,symlinkSync,truncateSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {installSourceLoader} from './load-source.mjs';
@@ -42,6 +42,16 @@ function initialTask(f){
   const task=f.manager.acquireTask('task',f.repo);
   try{CentralOrchestrator.initialize(spec,{ownerSessionId:f.manager.ownerSessionId,lockManager:f.manager,locks:{workspace:f.workspaceLock,task},runners:{scout:async()=>{throw new Error('No provider dispatch in storage fixture')}},store,artifacts:[source],now:()=>TIME})}finally{f.manager.release(task)}return store;
 }
+test('candidate history budgets scale by task while an individual task still stops at the byte ceiling',async t=>{
+  const f=fixture(t);h.completeProjectHandoff(await f.authorize());
+  const root=join(f.repo,'.controlled-dev','candidates');mkdirSync(root,{recursive:true});
+  const add=(task,start,end)=>{const folder=join(root,task);mkdirSync(folder,{recursive:true});for(let i=start;i<end;i++){const path=join(folder,`object-${i}`);writeFileSync(path,'');truncateSync(path,60*1024*1024)}};
+  add('first-task',0,9);add('second-task',0,9);
+  const inventory=h.projectHandoffNamespaceManifest(f.repo),objects=inventory.filter(f=>f.path.startsWith('.controlled-dev/candidates/'));
+  assert.equal(objects.length,18);assert.ok(objects.reduce((n,f)=>n+f.bytes,0)>1024*1024*1024);
+  assert.ok(objects.every(f=>/^[a-f0-9]{64}$/.test(f.digest)),'Every retained file is still hashed');
+  add('first-task',9,18);assert.throws(()=>h.projectHandoffNamespaceManifest(f.repo),/PROJECT_HANDOFF_LIMIT/);
+});
 for(const changed of ['state','events','spec','artifact','mode','task-name','Git-head'])test(`exact acquired namespace refuses changed ${changed} before confirmation`,t=>{
   const f=fixture(t),store=initialTask(f),proposal=f.prepare();assert.equal(proposal.taskCount,1);
   if(changed==='state')appendFileSync(join(store.root,'state.json'),' ');

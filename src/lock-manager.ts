@@ -174,3 +174,19 @@ export function withRepairMutation<T>(root:string,workspaceHash:string,action:(r
 export function liveLockRecord(record:LockRecord):boolean{return inspectLive.has(record.token)}
 const inspectLive=new Set<string>();
 function syncDirectory(path:string):void{const fd=openSync(path,'r');try{fsyncSync(fd)}finally{closeSync(fd)}}
+
+/** Hold one project lease across host maintenance and native confirmation.
+ * Reclaim only a verified dead process incarnation, never a lease by age. */
+export async function withProjectWorkspaceLease<T>(data:string,repo:string,action:(manager:LockManager,lock:LockHandle)=>Promise<T>,options:{readonly retainLeaseOnFailure?:boolean}={}):Promise<T>{
+  const manager=new LockManager(data,`candidate-promotion-${randomUUID()}`,`promotion-${randomUUID()}`);let lock:LockHandle;
+  try{lock=manager.acquireWorkspace(repo)}catch(error){
+    if((error as {code?:string}).code!=='WORKSPACE_LOCK_UNAVAILABLE')throw error;
+    const path=join(manager.root,'workspaces',`${manager.workspaceIdentity(repo).workspaceHash}.lock`),stat=lstatSync(path);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>16384)throw error;
+    const prior=JSON.parse(readFileSync(path).toString('utf8')) as LockRecord;
+    manager.reclaimProjectWorkspace(repo,prior);lock=manager.acquireWorkspace(repo);
+  }
+  let completed=false;
+  try{const result=await action(manager,lock);completed=true;return result}
+  finally{if(completed||options.retainLeaseOnFailure!==true)manager.release(lock)}
+}

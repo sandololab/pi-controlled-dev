@@ -25,7 +25,7 @@ const placeholders = modules.filter(path => !['src/run-quiescence.ts','src/legac
 const p4Modules = ['src/runtime-root-mapping.ts', 'src/contract-json.ts', 'src/contract-schema.ts', 'src/contract-semantic.ts', 'src/contract-node.d.ts'];
 const p5Modules = ['src/rpc-node.d.ts', 'src/pi-tui.d.ts'];
 const p6Modules = ['src/scout-node.d.ts', 'src/store-node.d.ts'];
-const domainModules = ['src/bounded-developer-checkpoint.ts','src/developer-baseline.ts','src/development-profile.ts','src/host-api.ts','src/project-custodian.ts','src/project-storage.ts','src/project-handoff.ts','src/candidate-checkpoints.ts','src/runtime-root-binding.ts','src/project-runtime-import.ts','src/verified-store-cache.ts','src/verified-store-cache-node.d.ts'];
+const domainModules = ['src/workflow-result-store.ts','src/candidate-storage.ts','src/host-command.ts','src/host-command-node.d.ts','src/host-command-recovery.ts','src/workflow-checkpoint.ts','src/workflow-validation.ts','src/human-gate-display.ts','src/git-project-identity.ts','src/role-executor.ts','src/bounded-developer-checkpoint.ts','src/developer-baseline.ts','src/development-profile.ts','src/host-api.ts','src/project-custodian.ts','src/project-storage.ts','src/project-handoff.ts','src/candidate-checkpoints.ts','src/runtime-root-binding.ts','src/project-runtime-import.ts','src/verified-store-cache.ts','src/verified-store-cache-node.d.ts'];
 const entry = 'extensions/controlled-dev.ts';
 const agents = ['scout', 'developer', 'reviewer', 'oracle'].map((name) => `agents/${name}.md`);
 const skills = ['repository-analysis','validation-planning','controlled-review','task-planning','recovery-explanation','runtime-observability','scenario-management','evidence-management','software-design-quality','project-memory','project-planning','greenfield-bootstrap'].map(name=>`skills/${name}/SKILL.md`);
@@ -57,7 +57,7 @@ const bilingualDocs = [
   "docs/it/USER-MANUAL.md",
   "docs/it/VALIDATION.md"
 ];
-const expected = [
+const expected = ['docs/CANDIDATE-STORAGE.md','docs/it/CANDIDATE-STORAGE.md','test/candidate-storage.test.mjs','docs/RELIABILITY-PLAN.md','docs/it/RELIABILITY-PLAN.md','test/host-command.test.mjs','test/host-command-recovery.test.mjs','test/workflow-checkpoint.test.mjs','test/candidate-read-reuse.test.mjs','test/review-preparation.test.mjs',
   ...bilingualDocs, 'test/language.test.mjs',
   'test/proposal-waiting-ux.test.mjs','test/project-opening-preview.test.mjs','test/developer-baseline.test.mjs',
   ...domainModules,'docs/SYSTEMIST-COMPOSITION.md','test/development-profile.test.mjs','test/contract-cache.test.mjs','test/scout-clarification-integration.test.mjs','test/candidate-git-batch.test.mjs','test/scout-clarifications.test.mjs','test/context-investigation.test.mjs','test/context-investigation-persistence.test.mjs','test/project-plan-consultation.test.mjs','test/project-shortcuts.test.mjs',
@@ -230,7 +230,8 @@ test('P2-TEST-004 — only four controlled roles are operational; markdown profi
 
 test('P2-TEST-005 — package metadata and archive inventory', () => {
   assert.equal(manifest.name, 'pi-controlled-dev');
-  assert.equal(manifest.version, '0.1.0-beta.2');
+  assert.match(manifest.version, /^0\.1\.0-beta\.\d+$/);
+  const lock=JSON.parse(read('package-lock.json'));assert.equal(lock.version,manifest.version);assert.equal(lock.packages[''].version,manifest.version);
   assert.equal(manifest.type, 'module');
   assert.equal(manifest.private, true); // npm publication stays disabled; GitHub is public.
   assert.deepEqual(manifest.repository, {type:'git',url:'git+https://github.com/sandololab/pi-controlled-dev.git'});

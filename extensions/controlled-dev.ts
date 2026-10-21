@@ -11,7 +11,7 @@ import { productionIntegrationCheckpoints } from '../src/production-bridge.js';
 import { showProjectPlanning, consultProjectPlan, projectStatus } from '../src/project-planning-ui.js';
 import { showCandidatePromotion } from '../src/candidate-promotion-ui.js';
 import { withProductionPromotion, productionCandidatePromotion } from '../src/production-bridge.js';
-import { adoptProductionProject, recoverProductionProjectHandoff, resumeProductionProjectStorage, productionProjectStorageResumeChoices, releaseProductionProjectStorage } from '../src/production-bridge.js';
+import { adoptProductionProject, recoverProductionProjectHandoff, resumeProductionProjectStorage, productionProjectStorageResumeChoices, releaseProductionProjectStorage, reduceProductionProjectStorage, requestProductionStoragePause } from '../src/production-bridge.js';
 import { ControlledReviewerRunner } from '../src/controlled-reviewer.js';
 import { rebuildProjectPlanningView } from '../src/human-repository.js';
 import { showProjectMemory } from '../src/project-memory-ui.js';
@@ -119,7 +119,7 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
       ...(wizardActive?{'controlled-dev-wizard':"The Controlled Dev wizard is open. The Scout notification is only data for the wizard: do not ask for approvals, confirmations, special replies or permission to start implementation. The summary, any errors and the retry remain in the panel. If you must respond to the notification alone, direct the user to the result in the wizard without claiming a proposal is ready when the run failed."}:{})}},...event.messages.slice(1)]};
   });
   const controlledCommand = {
-    description: "Opens or creates the project in the current folder; then describe the work in natural language. Options: request <description> | menu | project [request|plan|refine|consult|status|check|import|adopt|recover-storage|resume-storage [task]] | memory | new | status [--technical] | rebuild-view | run | integrate | recover | reconcile | resume | repair | close-attempt | decide APPROVE|REJECT|ANSWER [text]",
+    description: "Opens or creates the project in the current folder; then describe the work in natural language. Options: request <description> | menu | project [request|plan|refine|consult|status|check|import|adopt|reduce-storage|recover-storage|resume-storage [task]] | memory | new | status [--technical] | rebuild-view | checkpoint | run | integrate | recover | reconcile | resume | repair | close-attempt | decide APPROVE|REJECT|ANSWER [text]",
     async handler(args:string, ctx:CommandContext) {
       if(!ctx||ctx.mode!=='tui'||typeof ctx.ui?.confirm!=='function'||typeof ctx.ui?.notify!=='function'||!owner||ctx.sessionManager?.getSessionId()!==owner)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
       ctx={...ctx,ui:serializeControlledPanels(ctx.ui,panelScope)};
@@ -140,6 +140,11 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
       try {
       if(args.startsWith('request ')){ctx={...ctx,planningRequest:args.slice(8).trim()};args='project request'}
       const entry=args.trim().replace(/\s+/g,' ');
+      if(entry==='checkpoint'){
+        if(!orchestrator?.current)throw new Error('CONTROLLED_DEV_TASK_INPUT_MISSING');
+        const saved=orchestrator.current.saveCheckpoint(orchestrator.current.state.revision);
+        ctx.ui.notify(saved==='PORTABLE'?"The portable checkpoint is saved. No agent was started.":"Task data is saved. No agent was started.",'info');return;
+      }
       if(!entry||['project','project new','project existing','project refactor','project open','project plan','project request','menu'].includes(entry)){
         const root=discoverCurrentProject(invocationCwd);
         if(orchestrator?.current&&orchestrator.current.state.repoRoot!==root&&!['COMPLETED','FAILED'].includes(orchestrator.current.state.state))throw new Error('GREENFIELD_ACTIVE_TASK');
@@ -174,11 +179,16 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
           "Regenerate documentation":'rebuild-view',"Recover control":'recover',"Check previous tasks":'reconcile',"Resume task":'resume',"Repair saved data":'repair',"Close blocked attempt":'close-attempt',"Break down the work":'project refine'};
         actions["Continue task"]=orchestrator?.current?'resume':'run';
         const promotion=productionCandidatePromotion(ctx),eligible=promotion?.integrationChoices();
+        actions["Reduce duplicate saved copies"]='project reduce-storage';
         actions["Keep the project in its own folder"]='project adopt';
         if(productionProjectStorageResumeChoices(ctx).length)actions["Resume transferred project"]='project resume-storage';
         if(eligible?.length)actions["Integrate into project"]='integrate'+(eligible.length===1?' '+eligible[0].taskId:'');
         const selected=await chooseAction(ctx.ui,"Choose an action","The system proposes; you revise and authorize.",Object.keys(actions));
         if(!selected)return;args=actions[selected as keyof typeof actions];
+      }
+      if(args.trim()==='project reduce-storage'){
+        if(orchestrator?.current)throw new Error('CANDIDATE_STORAGE_CLOSE_REQUIRED');
+        await reduceProductionProjectStorage(ctx);return;
       }
       if(['project adopt','project recover-storage'].includes(args.trim())){
         await withProgress(ctx.ui,()=> "Status: Moving project documents and state",async()=>{
@@ -344,7 +354,7 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
         ...(lastFailure?{lastFailure}:{}),
       }, null, 2), 'info');
       } catch(error){
-        const presented=errorPresentation(error);lastFailure={code:presented.code,message:presented.message,...(presented.path?{path:presented.path}:{}),...(error instanceof PreTaskProposalError?{diagnostic:error.diagnostic}:{})};
+        const presented=errorPresentation(error);lastFailure={code:presented.code,message:presented.message,...(presented.path?{path:presented.path}:{}),...(presented.diagnostic?{diagnostic:presented.diagnostic}:{}),...(error instanceof PreTaskProposalError?{diagnostic:error.diagnostic}:{})};
         ctx.ui.notify(presented.message+"\nDetails: /controlled-dev status --technical",'error');
       } finally {busy=false}
       },"Checking and preparing the project");
@@ -353,13 +363,18 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
   pi.registerCommand('controlled-dev',controlledCommand);
   // Pi awaits a normal extension command in its prompt loop. Native shortcuts
   // run independently, so consultation remains reachable during a long task.
+  pi.registerShortcut?.('alt+i',{description:"Pause saved-copy maintenance after the current file",handler:async ctx=>{ctx.ui.notify(requestProductionStoragePause()?"Pause requested. The current file will finish safely before storage maintenance stops.":"No saved-copy maintenance is running.",'info')}});
   pi.registerShortcut?.('alt+p',{description:"View the plan, including while work is running",handler:ctx=>consultReadonly(ctx,'project consult')});
   pi.registerShortcut?.('alt+s',{description:"View task status",handler:ctx=>consultReadonly(ctx,'status')});
   pi.on('input',async(event,ctx)=>{
     // Controlled workflows already consume the provider's completion event.
     // Keep its generic wake prompt from starting a second conversation while
     // the native wizard owns proposals, questions and authorizations.
-    if(busy&&event.source==='extension'&&event.text.trim()==='Subagent updates above.'&&!event.images?.length)return {action:'handled'};
+    const wake=event.text.trim();
+    if((busy||orchestrator?.current)&&event.source==='extension'&&!event.images?.length&&[
+      'Subagent updates above.',
+      'Inspect subagent updates above. Answer pending supervisor requests within your authority. For completed work, read saved results and resume the already-authorized parent task, or report completion. If approval is required, explicitly ask the user. Do not silently yield, rerun completed work, or infer new authorization.',
+    ].includes(wake))return {action:'handled'};
     if(event.source!=='interactive'||ctx.mode!=='tui'||!event.text.trim()||event.text.trimStart().startsWith('/')||event.images?.length||busy||ctx.isIdle?.()===false)return {action:'continue'};
     let root:string;try{root=selectedProjectRoot??discoverCurrentProject(ctx.cwd)}catch{return {action:'continue'}}
     if(!productionProjectPlanning({...ctx,cwd:root}))return {action:'continue'};
@@ -390,9 +405,10 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
     // Native Pi awaits shutdown handlers. A session that only consulted the
     // adopted project still saves a fresh checkpoint before relinquishing it.
     const root=selectedProjectRoot??context?.cwd;
-    if(!orchestrator?.current&&root&&context?.cwd&&context.sessionManager.getSessionId()===owner)
-      await releaseProductionProjectStorage({cwd:root});
-    dispose();
+    try{
+      if(!orchestrator?.current&&root&&context?.cwd&&context.sessionManager.getSessionId()===owner)
+        await releaseProductionProjectStorage({cwd:root});
+    }finally{dispose()}
   });
 }
 }

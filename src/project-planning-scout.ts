@@ -9,6 +9,23 @@ import type { MemorySelection } from './project-memory-context.js';
 export interface RefinementBinding {readonly previousPlanDigest:string;readonly targetTaskId:string}
 export interface PlanningScoutMode {readonly goal:ProjectGoal;readonly previous?:ProjectPlan;readonly correction?:string;readonly selection?:MemorySelection;
   readonly refinement?:RefinementBinding;readonly refinementFeedback?:PlanningRefinementOutput;readonly investigationQuestions?:readonly {question:string;why?:string}[]}
+/**
+ * Project stored plan context into the vocabulary of the Scout's output schema.
+ * Stored tasks bind full memory references; Scout proposals can name only IDs
+ * from the supplied memory selection. The original plan/digest remain unchanged.
+ * The retained digest identifies that original record, not this delivery projection.
+ */
+export function previousPlanForScout(plan: ProjectPlan | undefined) {
+  if (!plan) return null;
+  const previous = copyJson(plan) as unknown as ProjectPlan;
+  return {
+    ...previous,
+    plannedTasks: previous.plannedTasks.map(({ relevantMemoryRefs, ...task }) => ({
+      ...task,
+      relevantMemoryIds: relevantMemoryRefs.map(reference => reference.recordId),
+    })),
+  };
+}
 const fields={plannedTaskId:scalars.ID,title:scalars.Text,objective:scalars.Text,rationale:scalars.Text,
   scopeIntent:list(scalars.Text,1,16),acceptanceIntent:list(scalars.Text,1,16),validationIntent:list(scalars.Text,1,16),dependsOn:list(scalars.ID,0,64),
   dependencyRationale:list(object('Rationale',{plannedTaskId:scalars.ID,rationale:scalars.Text}),0,64),relevantMemoryIds:list(scalars.ID,0,8)};

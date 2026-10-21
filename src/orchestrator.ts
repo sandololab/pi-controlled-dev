@@ -1,8 +1,16 @@
-import { captureCandidateCheckpoint } from './candidate-checkpoints.js';
-import { captureBoundedDeveloperCheckpoint } from './bounded-developer-checkpoint.js';
-import { captureDeveloperBaseline, createReviewerBaselineContext } from './developer-baseline.js';
+import { saveCandidateArtifacts, WorkflowResultSaveError } from './workflow-result-store.js';
+import { registeredRoleDispatchers, isRegisteredRoleDispatchers } from './role-executor.js';
+import type { RoleDispatchers, RegisteredRuntimes } from './role-executor.js';
+export { registeredRoleDispatchers } from './role-executor.js';
+export type { RoleDispatchers, RegisteredRuntimes } from './role-executor.js';
+import { humanGateDisplay, HUMAN_GATE_TITLES } from './human-gate-display.js';
+export { humanGateDisplay, HUMAN_GATE_TITLES } from './human-gate-display.js';
+import { HOST_SUPERVISION_MEDIA, inspectHostCommandRecovery } from './host-command-recovery.js';
+import { WorkflowValidationService } from './workflow-validation.js';
+import type { HostCommandOptions } from './host-command.js';
+import { WorkflowCheckpointService } from './workflow-checkpoint.js';
+import { captureDeveloperBaselineAsync, createReviewerBaselineContext } from './developer-baseline.js';
 import type { DeveloperBaselineEvidence } from './developer-baseline.js';
-import { sealProjectHandoff, releaseProjectHandoff, currentProjectHandoffCandidatePaths } from './project-handoff.js';
 import { readProjectCustodian } from './project-custodian.js';
 import { createScoutClarificationRequest, consumeScoutClarification, scoutClarificationCoverage, createScoutClarificationDelivery } from './scout-clarifications.js';
 import { verifiedRuntimeRootMappings, runtimeRootMappingFor } from './runtime-root-binding.js';
@@ -11,7 +19,6 @@ import type { ScoutAnswerImpact, ScoutClarificationContext } from './scout-clari
 import type { TrustedConfirmationRequest, TrustedConfirmationReceipt } from './trusted-confirmation.js';
 import { runQuiescent, runProofRef, verifyReviewerNoDispatchProof } from './run-quiescence.js';
 import type { ReviewerNoDispatchProof } from './run-quiescence.js';
-import { resolveDevelopmentProfile } from './development-profile.js';
 import type { DevelopmentProfile } from './development-profile.js';
 import { consumePolicyCapability, assertPolicyCapabilityCurrent, POLICY_AUTHORIZATION_MEDIA } from './policy-authorization.js';
 import type { PolicyAuthorizationCapability } from './policy-authorization.js';
@@ -37,13 +44,13 @@ import { COMPLETION_CONDITIONS, evaluateTransition } from './state-machine.js';
 import type { CompletionFacts, Facts, TransitionId } from './state-machine.js';
 import { freezeTaskSpec } from './task-spec.js';
 import { currentValidationEvidence } from './contract-semantic.js';
-import { SCOUT_LAUNCH_CONTRACT_HASH, runScout } from './controlled-scout.js';
+import { SCOUT_LAUNCH_CONTRACT_HASH } from './controlled-scout.js';
 import type { ControlledRegistration, ScoutRun, ScoutRunOptions } from './controlled-scout.js';
-import { DEVELOPER_LAUNCH_CONTRACT_HASH, runDeveloper } from './controlled-developer.js';
+import { DEVELOPER_LAUNCH_CONTRACT_HASH } from './controlled-developer.js';
 import type { ControlledDeveloperRegistration, DeveloperRun, DeveloperRunOptions } from './controlled-developer.js';
-import { isAcquiredReviewerNoDispatchProof, REVIEWER_LAUNCH_CONTRACT_HASH, runReviewer } from './controlled-reviewer.js';
+import { verifyPreparedReviewPacket, isAcquiredReviewerNoDispatchProof, REVIEWER_LAUNCH_CONTRACT_HASH } from './controlled-reviewer.js';
 import type { ControlledReviewerRegistration, ReviewPacket, ReviewerRun, ReviewerRunOptions } from './controlled-reviewer.js';
-import { ORACLE_LAUNCH_CONTRACT_HASH, oraclePacketHash, runOracle } from './controlled-oracle.js';
+import { ORACLE_LAUNCH_CONTRACT_HASH, oraclePacketHash } from './controlled-oracle.js';
 import type { ControlledOracleRegistration, OracleEscalationPacket, OracleRun, OracleRunOptions } from './controlled-oracle.js';
 import { isAcquiredDispatchIdentity, isAcquiredTerminalProof, verifyTerminalProof } from './pi-subagents-rpc.js';
 import type { RpcEvents, TerminalProof, TerminalProofOptions } from './pi-subagents-rpc.js';
@@ -75,36 +82,8 @@ export type OrchestratorErrorCode = 'ORCHESTRATOR_TASK_INVALID' | 'ORCHESTRATOR_
   | 'RESULT_ATTRIBUTION_MISMATCH' | 'RESULT_SCHEMA_INVALID' | 'RESULT_CONTRADICTORY'
   | 'HUMAN_GATE_REQUIRED' | 'VALIDATION_REQUIRED' | 'VALIDATION_FAILED' | 'REWORK_REQUIRED'
   | 'ADVISORY_REQUIRED' | 'COMPLETION_NOT_YET_AUTHORIZED' | 'ORCHESTRATOR_BLOCKED' | 'SCOPE_GUARD_FAILED' | 'DEVELOPER_BASELINE_FAILED'
-  | 'DURABLE_TERMINAL_PROOF_UNAVAILABLE' | 'SCOPE_CHANGE_NOT_EXPANSION' | 'SCOPE_CHANGE_PROTOCOL_VIOLATION';
+  | 'DURABLE_TERMINAL_PROOF_UNAVAILABLE' | 'SCOPE_CHANGE_NOT_EXPANSION' | 'SCOPE_CHANGE_PROTOCOL_VIOLATION' | 'HOST_COMMAND_ASYNC_REQUIRED';
 export class OrchestratorError extends Error { constructor(readonly code: OrchestratorErrorCode,readonly reasonCode?:string) { super(code); } }
-
-export interface RoleDispatchers {
-  readonly scout?: (assignment: AssignmentEnvelope, context: ValidationContext, options?: ScoutRunOptions) => Promise<ScoutRun>;
-  readonly developer?: (assignment: AssignmentEnvelope, context: ValidationContext, options?: DeveloperRunOptions) => Promise<DeveloperRun>;
-  readonly reviewer?: (assignment: AssignmentEnvelope, packet: ReviewPacket, context: ValidationContext, options?: ReviewerRunOptions) => Promise<ReviewerRun>;
-  readonly oracle?: (assignment: AssignmentEnvelope, packet: OracleEscalationPacket, context: ValidationContext, options?: OracleRunOptions) => Promise<OracleRun>;
-}
-export interface RegisteredRuntimes {
-  readonly developmentProfile?: DevelopmentProfile;
-  readonly events: RpcEvents; readonly ownerSessionId: string;
-  readonly scout: ControlledRegistration; readonly developer: ControlledDeveloperRegistration;
-  readonly reviewer: ControlledReviewerRegistration; readonly oracle: ControlledOracleRegistration;
-}
-const terminalDispatchers=new WeakSet<object>();
-export function registeredRoleDispatchers(runtime: RegisteredRuntimes): RoleDispatchers {
-  const developmentProfile=resolveDevelopmentProfile(runtime.developmentProfile);
-  const dispatchers=Object.freeze({
-    scout: (assignment: AssignmentEnvelope, validationContext: ValidationContext, options?: ScoutRunOptions) =>
-      runScout(assignment,{registration:runtime.scout,events:runtime.events,ownerSessionId:runtime.ownerSessionId,validationContext,options,developmentProfile}),
-    developer: (assignment: AssignmentEnvelope, validationContext: ValidationContext, options?: DeveloperRunOptions) =>
-      runDeveloper(assignment,{registration:runtime.developer,events:runtime.events,ownerSessionId:runtime.ownerSessionId,validationContext,options,developmentProfile}),
-    reviewer: (assignment: AssignmentEnvelope, packet: ReviewPacket, validationContext: ValidationContext, options?: ReviewerRunOptions) =>
-      runReviewer(assignment,packet,{registration:runtime.reviewer,events:runtime.events,ownerSessionId:runtime.ownerSessionId,validationContext,options,developmentProfile}),
-    oracle: (assignment: AssignmentEnvelope, packet: OracleEscalationPacket, validationContext: ValidationContext, options?: OracleRunOptions) =>
-      runOracle(assignment,packet,{registration:runtime.oracle,events:runtime.events,ownerSessionId:runtime.ownerSessionId,validationContext,options,developmentProfile}),
-  });
-  terminalDispatchers.add(dispatchers);return dispatchers;
-}
 
 export interface AssignmentOptions {
   readonly workRoot?: string; readonly baseRef?:string; readonly baseCommit?: string; readonly candidateDigest?: string; readonly candidateGeneration?: number;
@@ -226,137 +205,6 @@ const humanRequests=new WeakSet<object>(),humanReceipts=new WeakMap<object,{ctx:
 export async function confirmHumanDisplay(ctx:HumanGateChannel,display:string,title='Controlled development: approve before completion'):Promise<boolean>{
   return !!await requestHumanConfirmation(ctx,display,title);
 }
-export const HUMAN_GATE_TITLES:Readonly<Record<ImplementedHumanGate,string>>=Object.freeze({
-  beforeImplementation:"Authorize implementation?",onScopeChange:"A scope extension is required",
-  onOracleDecision:"A decision is required",beforeCompletion:"Ready to complete the task",
-  onRetryExhausted:"Automatic attempts exhausted",beforeReviewerRedispatch:"Review interrupted"});
-/** Human-readable projection of frozen data, never a new authorization payload. */
-export function humanGateDisplay(request:HumanGateRequest,choice:HumanDecisionChoice):string{
-  const d=JSON.parse(request.displayText);
-  // Escape control/bidi characters in frozen user/child text; never interpret it as terminal markup.
-  const text=(v:unknown)=>String(v??"Unavailable").replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,c=>`\\u${c.charCodeAt(0).toString(16).padStart(4,'0')}`);
-  const lines=["Objective:",text(d.objective)];
-  const validationDescriptions=(commands:readonly any[],criteria:readonly any[]=[],requirements:readonly any[]=[])=>{
-    const reviews=criteria.filter(c=>c.method==='REVIEW').map(c=>`Independent review: ${text(c.text)}`);
-    if(!commands.length)return reviews;
-    const recipes=commands.map(command=>{
-      const executable=String(command.executable??'').split('/').at(-1),argv=JSON.stringify(command.argv);
-      if(executable==='git'&&argv==='["diff","--check"]')return "Diff formatting check; it does not prove the text is correct.";
-      if(executable==='npm'&&argv==='["test"]')return "Run the project's configured test suite in the candidate copy.";
-      return undefined;
-    });
-    if(recipes.every(Boolean))return [...recipes as string[],...reviews];
-    const linked=criteria.filter(c=>(c.commandIds??[]).some((id:string)=>commands.some(command=>command.id===id)));
-    if(linked.length)return linked.map(c=>typeof c.text==='string'&&c.text.trim()?`Check that ${text(c.text)}`:`Automated check required by criterion ${text(c.id)}`);
-    const descriptions=requirements.filter(r=>typeof r.text==='string'&&r.text.trim()).map(r=>`Check that ${text(r.text)}`);
-    return descriptions.length?descriptions:["Planned automated check; criterion description unavailable."];
-  };
-  const section=(title:string,items:readonly string[])=>lines.push('',`${title}:`,...(items.length?items.map(x=>`- ${x}`):["- None"]));
-  const risks=d.residualRisks??d.knownRisks??[],decisions=d.decisions??[];
-  const riskLines=risks.map((r:any)=>{
-    const dispositions=decisions.filter((x:any)=>x.subjectId===r.id);
-    const resolved=!r.blocking&&dispositions.length===1&&dispositions[0].kind==='RESOLVE_RISK';
-    const deferred=!r.blocking&&dispositions.length===1&&dispositions[0].kind==='DEFER_RISK';
-    const description=r.id==='host-validation-pending'?"The host was expected to run validation.":text(r.text);
-    return `${description} Status: ${resolved?(r.id==='host-validation-pending'?"resolved — validation passed":"resolved"):deferred?"residual risk accepted and deferred":r.blocking?"blocking":"unresolved"}.`;
-  });
-  let question='';
-  switch(request.gateType){
-    case 'beforeImplementation':
-      if(d.developerRecovery)lines.push('',"The previous Developer stopped because of a connection error, before executing tools.",
-        "The worktree still matches the baseline. The previous attempt remains in the journal.",
-        `Recovery attempt ${d.developerRecovery.infrastructureRetriesAfter} of ${d.developerRecovery.maxInfrastructureRetries} allowed by the task. Canceling the dialog keeps this request pending.`,
-        "If you approve, a new Developer will start in the same worktree with the same scope.");
-      if(d.boundedDeveloperRecovery)section("Why another attempt is needed",[
-        "The previous Developer reported a blocker without changing files or running commands. Its result remains in history.",
-        `Reported reason: ${text(d.boundedDeveloperRecovery.blockedReason)}`,
-        "The package verified that the agents terminated and that the project and isolated copy remain unchanged.",
-        "The package will run the approved automated checks in the isolated copy; the Developer will read their outcomes. Subsequent checks will run again.",
-        `New attempt after a blocker: ${d.boundedDeveloperRecovery.boundedRetriesAfter} of ${d.boundedDeveloperRecovery.maxBoundedRetries}. Previously used attempts remain counted.`]);
-      section("Editable files/paths in the candidate copy",(d.allowedPaths??[]).map(text));
-      section("Forbidden files/paths",(d.deniedPaths??[]).map(text));
-      section("Planned checks",validationDescriptions(d.validationCommands??[],d.acceptanceCriteria??[],d.requirements??[]));
-      if(d.validationFailure)section("Why a correction is needed",[text(d.validationFailure)]);
-      if(d.scoutClarifications?.length)section("Confirmed clarifications",(d.scoutClarifications??[]).map((a:any)=>`Question ${a.ambiguityIndex+1}: ${text(a.ambiguityText)}\nAnswer: ${text(a.answer)}`));
-      section("Known risks",riskLines);
-      if(d.scopeBaselineRecovery)section("Why confirmation is needed again",[
-        "The previous baseline check stopped development before the Developer started.",
-        "The package rechecked the same project version and isolated copy. The approved analysis is preserved.",
-        "The previous confirmation remains in history. This new confirmation authorizes development to start within the same boundaries."]);
-      question=d.developerRecovery||d.boundedDeveloperRecovery?"Do you authorize another Developer attempt?":d.scopeBaselineRecovery?"Do you authorize development after the baseline check?":"Do you authorize the Developer to start these changes?";break;
-    case 'beforeCompletion':{
-      section("Verified changes",(d.changedFiles??[]).map(text));
-      if(d.changedFiles?.length)lines.push("- No other files changed");
-      const validation=d.validation??[];
-      lines.push('',"Checks:",validation.length&&validation.every((v:any)=>v.status==='PASSED')?"✓ Automated checks passed":"✗ Automated checks failed or unavailable",
-        `${d.reviewResult?.verdict==='PASS'?'✓':'✗'} Reviewer: ${text(d.reviewResult?.verdict)}`);
-      const unresolved=risks.some((r:any)=>r.blocking||decisions.filter((x:any)=>x.subjectId===r.id&&['RESOLVE_RISK','DEFER_RISK'].includes(x.kind)).length!==1);
-      lines.push(unresolved?"✗ Unresolved risks: see below":"✓ No unresolved residual risks");
-      if(riskLines.length)section("Risks and decisions",riskLines);
-      question="Do you approve completion of this task?";break;
-    }
-    case 'beforeReviewerRedispatch':{
-      lines.push('',d.previousReviewer?.dispatchProofRef?"The previous review request was not sent: the package verified this before allowing recovery.":"The previous Reviewer did not complete the check because of a technical problem.",
-        "The candidate has not changed. Previously executed checks remain valid.",'',"If you continue:",
-        "- a new Reviewer will start;","- the Developer will not run again;","- tests will not be repeated;",
-        "- no changes will be applied to the original project.",'',"Technical details:",
-        `Previous Reviewer: ${text(d.previousReviewer?.assignmentId)}`,
-        `Infrastructure error: ${text(d.failureCode)}`,
-        `Candidate: generation ${text(d.candidateGeneration)}, digest ${text(d.candidateDigest)}`,
-        `Current checks: ${(d.validationIds??[]).map(text).join(', ')||"unavailable"}`);
-      question="Do you want to start a new Reviewer?";break;
-    }
-    case 'onScopeChange':{
-      section("Current scope",(d.oldAllowedPaths??[]).map(text));
-      const changes:string[]=[];
-      for(const path of d.proposedAllowedPaths??[])if(!(d.oldAllowedPaths??[]).includes(path))changes.push(`+ ${text(path)}`);
-      for(const path of d.oldAllowedPaths??[])if(!(d.proposedAllowedPaths??[]).includes(path))changes.push(`− ${text(path)}`);
-      for(const path of d.oldDeniedPaths??[])if(!(d.proposedDeniedPaths??[]).includes(path))changes.push(`+ Previously forbidden permission: ${text(path)}`);
-      for(const r of d.proposedRequirements??[])if(!(d.oldRequirements??[]).some((old:any)=>canonicalize(old)===canonicalize(r)))changes.push(`+ Requirement: ${text(r.text)}`);
-      for(const r of d.exactRemovals?.requirements??[])changes.push(`− Requirement: ${text(r.text)}`);
-      for(const [key,label] of [['acceptanceCriteria',"Criterion"],['constraints',"Constraint"],['validationCommands','Validation']] as const){
-        for(const [set,sign] of [[d.exactAdditions,'+'],[d.exactRemovals,'−']] as const)for(const item of set?.[key]??[])
-          changes.push(`${sign} ${label}: ${key==='validationCommands'
-            ?validationDescriptions([item],d.affectedAcceptanceCriteria?.[sign==='+'?'proposed':'old']??[],sign==='+'?d.proposedRequirements??[]:d.oldRequirements??[]).join('; ')
-            :text(typeof item==='string'?item:item.text)}`);
-      }
-      const authorityLabels:Record<string,string>={STRONG_CONFINEMENT_RELAXED:"Strong confinement no longer required",OBJECTIVE_CHANGED:"Objective changed",INPUT_SOURCE_CHANGED:"Task sources changed"};
-      for(const change of d.authorityChanges??[]){
-        if(authorityLabels[change])changes.push(`! ${authorityLabels[change]}`);
-        if(change.startsWith('HUMAN_GATE_DISABLED:'))changes.push(`! Human confirmation disabled: ${HUMAN_GATE_TITLES[change.split(':')[1] as ImplementedHumanGate]}`);
-      }
-      lines.push('',"New requested scope — changes:",...(changes.length?changes:["No detailed changes available"]));
-      section("Resulting scope",(d.proposedAllowedPaths??[]).map(text));
-      section("Forbidden paths after the change",(d.proposedDeniedPaths??[]).map(text));
-      lines.push('',"Reason:",text(d.reason),'',"Approval installs the new specification and requires reanalysis; it does not start a writer.");
-      question="Do you authorize this scope change?";break;
-    }
-    case 'onOracleDecision':
-      lines.push('',"Problem:",text(d.ambiguity),'',"Options:",...(d.options??[]).map((o:string,i:number)=>`${String.fromCharCode(65+i)}. ${text(o)}`),
-        '',"Oracle recommendation:",text(d.recommendation),'',"Consequences:",text(d.consequences),
-        '',"Oracle provides a recommendation; the user makes the decision.",
-        "Approval permits reconciliation only: it does not authorize implementation or retry.");
-      question="Do you accept the recommendation for reconciliation only?";break;
-    case 'onRetryExhausted':{
-      const c=d.counters??{};
-      const failureLabels:Record<string,string>={TEST:"Validation failed",REVIEW:"Review failed",INFRA:"Execution failed because of an infrastructure problem",AMBIGUITY:"Unresolved ambiguity",SCOPE:"Scope violation",SCHEMA:"Invalid result",RECOVERY:"State requires reconciliation"};
-      const failure=failureLabels[d.lastFailure?.category]??"Unclassified error";
-      lines.push('',"What failed:",failure,"Latest error:",failure,
-        '',`Attempts made: ${text(c.attempts??d.attempts)}`,`Starts: ${text(c.dispatches??d.dispatches)}`,
-        `Corrections: ${text(c.reworkAttempts??d.reworkAttempts)}`,`Infrastructure retries: ${text(c.infrastructureRetries??d.infrastructureRetries)}`);
-      section("Permitted continuations",(d.legalContinuations??[]).map((v:string)=>v==='RECONCILE'?"Reconciliation by the Orchestrator; task still blocked":text(v)));
-      lines.push('',"Approval does not increase budgets or reset counters.");
-      question="Do you authorize reconciliation only, without further attempts?";break;
-    }
-  }
-  lines.push('',"The original repository will not be modified automatically.","No automatic commit, merge, push, publish or apply.");
-  if(choice.decision==='REJECT')lines.push('',"You are choosing a final rejection: the task will end with outcome FAILED.");
-  if(choice.decision==='ANSWER')lines.push('',"Exact answer:",JSON.stringify(choice.answer),"The answer is NOT approval; the task will remain blocked.");
-  lines.push('',"No/Esc cancels the dialog; it does not record a rejection.",'',choice.decision==='REJECT'?"Do you want to permanently reject this request?":
-    choice.decision==='ANSWER'?"Do you want to send this answer without authorizing the request?":question);
-  return lines.join('\n');
-}
-/** The sole production confirmation boundary. Choice/answer are untrusted until the exact display is confirmed. */
 export async function presentHumanGate(ctx:HumanGateChannel,request:HumanGateRequest,choice:HumanDecisionChoice={decision:'APPROVE'}):Promise<TrustedHumanDecision|undefined>{
   if(ctx?.mode!=='tui'||(typeof ctx.ui?.custom!=='function'&&typeof ctx.ui?.confirm!=='function')||!ctx.sessionManager?.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(!humanRequests.has(request)||!choice||Object.keys(choice).some(k=>!['decision','answer'].includes(k))
@@ -463,6 +311,7 @@ export class CentralOrchestrator {
   readonly #records=new Map<string,ContextRecord>(); readonly #events:TransitionEvent[]=[]; readonly #assignments=new Map<string,AssignmentEnvelope>();
   readonly #acceptedRuns=new Map<string,string>(); readonly #runners:RoleDispatchers; readonly #ownerSessionId:string; readonly #now:()=>string;
   readonly #scopeGuardFactory:(spec:TaskSpec,workRoot:string,baseCommit:string,previousGeneration:number)=>CandidateGuard;
+  #pendingCandidateSave?:{readonly capture:ScopeCapture;readonly terminalEvidence:string};
   readonly #parallelReviewEnabled:boolean; readonly #store:DurableStore|undefined;readonly #lockManager:LockManager;readonly #locks:WorkflowLocks;
   readonly #memoryContexts=new Map<string,PreparedMemoryContext>();
   #humanRequest:HumanGateRequest|undefined;
@@ -648,39 +497,22 @@ export class CentralOrchestrator {
     if(['COMPLETED','FAILED'].includes(this.#state.state)&&this.#state.runs.every(runQuiescent))
       this.#lockManager.releaseAll(this.#locks);
   }
-  /** Automatic host-only persistence, after real role quiescence and publication.
-   * A checkpoint records data integrity; it grants no future execution authority. */
-  #saveProjectCheckpoint(release=false):void{
-    if(!this.#store||!readProjectCustodian(this.#state.repoRoot))return;
-    this.#cas(this.#state.revision);this.#requireQuiescent();
-    const previous=currentProjectHandoffCandidatePaths(this.#state.repoRoot);
-    const descriptors=previous.filter(path=>!path.startsWith(`candidates/${this.spec.taskId}/checkpoints/`));
-    if(this.#state.candidate){
-      const saved=captureCandidateCheckpoint(this.#state.repoRoot,this.#store.root,this.#store.agentDataRoot,
-        {manager:this.#lockManager,workspaceLock:this.#locks.workspace});
-      descriptors.push(`candidates/${this.spec.taskId}/checkpoints/${saved.descriptorDigest}.json`);
-    }else if(['BLOCKED','AWAITING_HUMAN','READY'].includes(this.#state.state)&&this.#state.blockedReason==='Developer reported a bounded blocker'){
-      // Persist the verified no-effects baseline before sealing/releasing custody.
-      // The checkpoint preserves evidence; import still requires fresh approval.
-      captureBoundedDeveloperCheckpoint(this.#state.repoRoot,this.#store.root,this.#store.agentDataRoot,
-        {manager:this.#lockManager,workspaceLock:this.#locks.workspace,inspect:this.#store.artifactInspection});
+  /** A storage failure after publication preserves the accepted result and counters. */
+  saveCheckpoint(expectedRevision:number):'LOCAL'|'PORTABLE' {
+    this.#cas(expectedRevision);this.#requireQuiescent();
+    if(this.#pendingCandidateSave){
+      const pending=this.#pendingCandidateSave,current=this.#guard?.capture(pending.capture.generation,pending.terminalEvidence);
+      if(!current||current.digest!==pending.capture.digest)throw new OrchestratorError('SCOPE_GUARD_FAILED');
+      this.#recordCapture(pending.capture,this.#state.revision,pending.terminalEvidence);
     }
-    const assertQuiescent=()=>{
-      this.#requireQuiescent();
-      const tasksRoot=dirname(this.#store!.root);
-      for(const id of readdirSync(tasksRoot)){
-        if(!validateScalar('ID',id).ok)throw new Error('PROJECT_HANDOFF_SOURCE_CHANGED');
-        const root=join(tasksRoot,id),stat=lstatSync(root);
-        if(!stat.isDirectory()||stat.isSymbolicLink()||realpathSync(root)!==root)throw new Error('PROJECT_HANDOFF_SOURCE_CHANGED');
-        const ledger=DurableStore.load(root);
-        if(ledger.truncatedTailBytes||ledger.state.runs.some(run=>!runQuiescent(run)))throw new Error('PROJECT_HANDOFF_ROLE_NOT_QUIESCENT');
-        if(id===this.spec.taskId&&ledger.state.revision!==this.#state.revision)throw new Error('PROJECT_CHECKPOINT_STALE');
-      }
-    };
-    const input={repoRoot:this.#state.repoRoot,manager:this.#lockManager,workspaceLock:this.#locks.workspace,
-      assertQuiescent,candidateDescriptors:descriptors};
-    if(release)releaseProjectHandoff({...input,retireAuthority:()=>this.retireForProjectTransfer()});
-    else sealProjectHandoff(input);
+    this.#saveProjectCheckpoint();
+    return readProjectCustodian(this.#state.repoRoot)?'PORTABLE':'LOCAL';
+  }
+  #saveProjectCheckpoint(release=false):void {
+    if(!this.#store||!readProjectCustodian(this.#state.repoRoot))return;
+    new WorkflowCheckpointService().save({state:this.state,store:this.#store,manager:this.#lockManager,locks:this.#locks,
+      assertCurrent:()=>this.#cas(this.#state.revision),assertQuiescent:()=>this.#requireQuiescent(),
+      retireAuthority:()=>this.retireForProjectTransfer()},release);
   }
   /** Called by orderly project release, before the workspace lease is removed.
    * Once retired this host cannot dispatch or mutate this workflow again. */
@@ -763,17 +595,21 @@ export class CentralOrchestrator {
     this.#requireDispatch('developer');
     try{this.#guard=this.#scopeGuardFactory(this.spec,workRoot,this.#state.baselineCommit!,0)}catch(error){
       if(error instanceof ScopeGuardError){this.#transition('TR-012',expectedRevision,this.#facts('X'),'Scope baseline could not be proven');throw new OrchestratorError('SCOPE_GUARD_FAILED')}throw error}
-    const baselineEvidence=this.#acquireDeveloperBaseline(workRoot);
+    const baselineEvidence=await this.#acquireDeveloperBaseline(workRoot,undefined,false,options.hostCommandProgress);
     this.#transition('TR-009',this.#state.revision,this.#facts('R','I','effect'));this.#writerApproval=undefined;
     const assignment=createAssignment(this.spec,this.#state,'Developer',{workRoot,inputArtifactRefs:[this.spec.plan.snapshot.id,this.spec.currentTask.snapshot.id,...this.#clarificationRefs(),...(baselineEvidence?.evidenceRefs??[])]});this.#registerAssignment(assignment);this.#intent(assignment,this.#state.revision);
+    let completed:DecisionResult<DeveloperResult>;
     try{
       const output=await this.#runners.developer!(assignment,this.context(assignment),{...options,baselineEvidence,scoutClarifications:this.#clarificationDelivery(),...this.#terminalOptions(assignment)});this.acceptChildResult(assignment,output,this.#state.revision);
       if(output.result.blockedReason){this.#transition('TR-015',this.#state.revision,this.#facts('B'),'Developer reported a bounded blocker');return Object.freeze({decision:'BLOCKED',state:this.state,value:output.result})}
       const terminal=this.#terminalBytes(assignment,output);
       this.#capture=this.#guard.capture(1,terminal);this.#recordCapture(this.#capture,this.#state.revision,terminal);
-      return Object.freeze({decision:'VALIDATION_REQUIRED',state:this.state,value:output.result});
-    }catch(error){this.#unknown(assignment,'Developer dispatch/result failed');this.#blockCurrent(error instanceof ScopeGuardError?'Candidate scope/integrity failed':'Developer dispatch/result failed');
+      completed=Object.freeze({decision:'VALIDATION_REQUIRED',state:this.state,value:output.result});
+    }catch(error){if(error instanceof WorkflowResultSaveError)throw error;this.#unknown(assignment,'Developer dispatch/result failed');this.#blockCurrent(error instanceof ScopeGuardError?'Candidate scope/integrity failed':'Developer dispatch/result failed');
       if(error instanceof ScopeGuardError)throw new OrchestratorError('SCOPE_GUARD_FAILED');throw error}
+    this.#saveProjectCheckpoint();
+    return completed;
+
   }
   async rework(expectedRevision:number,workRoot:string,options:DeveloperRunOptions={}):Promise<DecisionResult<DeveloperResult>>{
     this.#cas(expectedRevision);const gated=this.requiresLocalWriterConfirmation;
@@ -787,28 +623,33 @@ export class CentralOrchestrator {
     this.#record('RECONCILED',this.#state.revision,'Host intent: prepare current candidate as isolated rework base',state=>state);
     let base:AuthorizedReworkBase;
     try{base=this.#guard.prepareRework(this.#capture,workRoot)}catch(error){this.#blockCurrent('Rework source/base preparation failed');throw error}
-    const baselineEvidence=this.#acquireDeveloperBaseline(base.workRoot,base.baseCommit,true);
+    const baselineEvidence=await this.#acquireDeveloperBaseline(base.workRoot,base.baseCommit,true,options.hostCommandProgress);
     this.#transition(gated?'TR-009':'TR-027',this.#state.revision,this.#facts('R','I','W','effect'),'Bounded rework admitted');
     this.#writerApproval=undefined;
     const assignment=createAssignment(this.spec,this.#state,'Developer',{workRoot:base.workRoot,baseRef:'HEAD',baseCommit:base.baseCommit,
       candidateDigest:base.candidateDigest,candidateGeneration:base.candidateGeneration,
       inputArtifactRefs:[this.spec.plan.snapshot.id,this.spec.currentTask.snapshot.id,...base.evidenceRefs,...this.#clarificationRefs(),...(baselineEvidence?.evidenceRefs??[])]});this.#registerAssignment(assignment);
     this.#intent(assignment,this.#state.revision,true);
+    let completed:DecisionResult<DeveloperResult>;
     try{
       const output=await this.#runners.developer!(assignment,this.context(assignment),{...options,baselineEvidence,scoutClarifications:this.#clarificationDelivery(),reworkBase:base,
         ...(this.#latestRuntimeDiagnosis()?{runtimeDiagnosis:this.#latestRuntimeDiagnosis()}:{}),...this.#terminalOptions(assignment)});this.acceptChildResult(assignment,output,this.#state.revision);
       if(output.result.blockedReason){this.#transition('TR-015',this.#state.revision,this.#facts('B'),'Developer reported a bounded blocker');return Object.freeze({decision:'BLOCKED',state:this.state,value:output.result})}
       const terminal=this.#terminalBytes(assignment,output);
       this.#capture=this.#guard.finishRework(base,terminal);this.#recordCapture(this.#capture,this.#state.revision,terminal);
-      return Object.freeze({decision:'VALIDATION_REQUIRED',state:this.state,value:output.result});
-    }catch(error){this.#unknown(assignment,'Rework dispatch/result failed');this.#blockCurrent(error instanceof ScopeGuardError?'Candidate scope/integrity failed':'Rework dispatch/result failed');
+      completed=Object.freeze({decision:'VALIDATION_REQUIRED',state:this.state,value:output.result});
+    }catch(error){if(error instanceof WorkflowResultSaveError)throw error;this.#unknown(assignment,'Rework dispatch/result failed');this.#blockCurrent(error instanceof ScopeGuardError?'Candidate scope/integrity failed':'Rework dispatch/result failed');
       if(error instanceof ScopeGuardError)throw new OrchestratorError('SCOPE_GUARD_FAILED');throw error}
+    this.#saveProjectCheckpoint();
+    return completed;
+
   }
-  #acquireDeveloperBaseline(workRoot:string,baseCommit?:string,allowKnownFailure=false):DeveloperBaselineEvidence|undefined{
+  async #acquireDeveloperBaseline(workRoot:string,baseCommit?:string,allowKnownFailure=false,onProgress?:HostCommandOptions['onProgress']):Promise<DeveloperBaselineEvidence|undefined>{
     if(!this.#store)return undefined;
     this.#requireQuiescent();
-    let acquired:ReturnType<typeof captureDeveloperBaseline>;
-    try{acquired=captureDeveloperBaseline(this.spec,this.#state,workRoot,this.#store,{...(baseCommit?{baseCommit}:{})})}
+    let acquired:Awaited<ReturnType<typeof captureDeveloperBaselineAsync>>;
+    const supervisionEpoch=this.#beginHostVerification('PRE_IMPLEMENTATION',workRoot);
+    try{acquired=await captureDeveloperBaselineAsync(this.spec,this.#state,workRoot,this.#store,{...(baseCommit?{baseCommit}:{}),supervisionEpoch,onProgress})}
     catch(error){this.#blockDeveloperBaseline('Initial host verification could not prove unchanged workspace');throw error}
     for(const ref of acquired.artifacts)this.#addRecord(ref.id,'ArtifactRef',ref);
     this.#record('RECONCILED',this.#state.revision,'Initial host checks acquired on the unchanged Developer worktree; post-change validation remains required',state=>state,[acquired.evidence.packageRef.id]);
@@ -835,12 +676,31 @@ export class CentralOrchestrator {
   validateApproved(expectedRevision:number):DecisionResult<readonly ValidationResult[]>{
     this.#cas(expectedRevision);this.#requireQuiescent();this.#verifyCandidateCurrent();
     if(!this.#store)throw new OrchestratorError('VALIDATION_REQUIRED');
+    // Once recovery relies on a supervised TESTING epoch, a legacy synchronous
+    // spawn cannot silently inherit that epoch's termination guarantees.
+    if(inspectHostCommandRecovery(this.#store.root,{state:this.#state,records:[...this.#records.values()],events:this.#events}).supervisedTesting)
+      throw new OrchestratorError('HOST_COMMAND_ASYNC_REQUIRED');
     const inputs:ValidationResult[]=[],artifacts:ArtifactRef[]=[];
     for(const command of this.spec.validationCommands.filter(c=>c.required)){
       const acquired=runApprovedValidation(this.spec,this.#state,command.id,this.#store);inputs.push(acquired.result);artifacts.push(...acquired.artifacts);
       if(acquired.result.status!=='PASSED')break;
     }
     return this.recordValidations(inputs,artifacts,expectedRevision);
+  }
+  #beginHostVerification(phase:'PRE_IMPLEMENTATION'|'TESTING',workRoot:string):ArtifactRef {
+    this.#requireQuiescent();if(!this.#store)throw new OrchestratorError('VALIDATION_REQUIRED');
+    const owner=currentProcessIncarnation();if(!owner)throw new Error('HOST_COMMAND_SUPERVISION_UNAVAILABLE');
+    const id=`host-supervision-${randomUUID()}`,payload={schemaVersion:1,id,taskId:this.spec.taskId,specHash:this.spec.specHash,
+      ownerSessionId:this.#ownerSessionId,owner,phase,workRoot,sourceRevision:this.#state.revision,commandHashes:this.spec.validationCommands.filter(c=>c.required).map(c=>hashCanonical(c))};
+    const ref=this.#store.put(id,canonicalize(payload),HOST_SUPERVISION_MEDIA);this.#addRecord(id,'ArtifactRef',ref);
+    this.#record('RECONCILED',this.#state.revision,'Supervised host verification admitted; no model attempt consumed',state=>state,[id]);return ref;
+  }
+  async validateApprovedAsync(expectedRevision:number,options:HostCommandOptions={}):Promise<DecisionResult<readonly ValidationResult[]>>{
+    this.#cas(expectedRevision);this.#requireQuiescent();this.#verifyCandidateCurrent();
+    if(!this.#store)throw new OrchestratorError('VALIDATION_REQUIRED');
+    const supervisionEpoch=this.#beginHostVerification('TESTING',this.#state.candidate!.root),admittedRevision=this.#state.revision;
+    const acquired=await new WorkflowValidationService().run(this.spec,this.state,this.#store,{...options,supervisionEpoch});
+    this.#cas(admittedRevision);return this.recordValidations(acquired.results,acquired.artifacts,admittedRevision);
   }
   completionPackage(expectedRevision:number):{readonly status:'COMPLETION_PACKAGE_VALID';readonly completion:'HUMAN_GATE_REQUIRED';readonly artifact:ArtifactRef}{
     this.#cas(expectedRevision);this.#requireQuiescent();this.#verifyCandidateCurrent();
@@ -1670,8 +1530,11 @@ export class CentralOrchestrator {
     const batch=Array.from({length:count},(_,i)=>{
       const assignment=createAssignment(this.spec,{...this.#state,counters:{...this.#state.counters,attempts:this.#state.counters.attempts+i}},
         'Reviewer',{inputArtifactRefs:this.#reviewRefs(host)});
-      const packet=this.buildReviewPacket(assignment,host);this.#registerAssignment(assignment);return {assignment,packet};
+      const packet=this.buildReviewPacket(assignment,host);
+      if(this.#store)verifyPreparedReviewPacket(packet,assignment,this.context(assignment,this.#currentValidations().map(v=>v.id)),this.#capture!.manifest,{diff:this.#capture!.patch,changedFiles:this.#capture!.changedFiles});
+      return {assignment,packet};
     });
+    for(const {assignment} of batch)this.#registerAssignment(assignment);
     if(!redispatch)this.#transition('TR-018',expectedRevision,this.#facts('V','effect'));
     for(const {assignment} of batch)this.#intent(assignment,this.#state.revision);
     const contexts=batch.map(({assignment})=>this.context(assignment,this.#currentValidations().map(value=>value.id)));
@@ -1914,7 +1777,7 @@ export class CentralOrchestrator {
     const values:Record<keyof typeof COMPLETION_CONDITIONS,boolean>={
       'CMP-01':this.#state.state==='REVIEWING'&&this.#lockManager.verifyTaskLock(this.#locks.task)&&this.#lockManager.verifyWorkspaceLock(this.#locks.workspace),
       'CMP-02':!!scout&&this.scoutClarifications().covered&&validateContract('TaskSpec',this.spec,this.context()).ok,
-      'CMP-03':terminalDispatchers.has(this.#runners)&&this.#state.runs.length>=3,
+      'CMP-03':isRegisteredRoleDispatchers(this.#runners)&&this.#state.runs.length>=3,
       'CMP-04':!!candidate&&!!this.#state.baselineCommit&&candidate.baseCommit===this.#state.baselineCommit&&candidate.root!==this.#state.repoRoot,
       'CMP-05':!!developer&&!developer.blockedReason&&validateStructure('DeveloperResult',developer).ok&&developer.specHash===this.spec.specHash,
       'CMP-06':this.#state.runs.length>0&&this.#state.runs.every(runQuiescent),
@@ -1982,21 +1845,12 @@ export class CentralOrchestrator {
     return Buffer.from(this.#store.read(ref)).toString('utf8');
   }
   #recordCapture(capture:ScopeCapture,expectedRevision:number,terminalEvidence:string):void{
-    if(this.#store){
-      const source=capture.candidate;
-      const manifest=this.#store.put(source.manifest.id,canonicalize(capture.manifest),source.manifest.mediaType);
-      const patch=this.#store.put(source.patch.id,capture.patch,source.patch.mediaType);
-      const handoff=this.#store.put(source.handoff.id,capture.handoff,source.handoff.mediaType);
-      const terminalProof=this.#store.put(source.terminalProof.id,terminalEvidence,source.terminalProof.mediaType);
-      for(const [old,current] of [[source.manifest,manifest],[source.patch,patch],[source.handoff,handoff],[source.terminalProof,terminalProof]])
-        if(old.digest!==current.digest||old.bytes!==current.bytes)throw new OrchestratorError('SCOPE_GUARD_FAILED');
-      capture={...capture,candidate:{...source,manifest,patch,handoff,terminalProof},artifacts:[manifest,patch,handoff,terminalProof]};
-      this.#capture=capture;
-    }
+    this.#pendingCandidateSave={capture,terminalEvidence};
+    if(this.#store){capture=saveCandidateArtifacts(this.#store,capture,terminalEvidence);this.#capture=capture;}
     for(const artifact of capture.artifacts)this.#addRecord(artifact.id,'ArtifactRef',artifact);
     const checked=validateContract('Candidate',capture.candidate,this.context());if(!checked.ok)throw new OrchestratorError('SCOPE_GUARD_FAILED');
     this.#record('CANDIDATE_MATERIALIZED',expectedRevision,'Host ScopeGuard materialized candidate',state=>({...state,candidate:checked.value}),capture.artifacts.map(value=>value.id));
-    this.#saveProjectCheckpoint();
+    this.#pendingCandidateSave=undefined;
   }
   #verifyCandidateCurrent():void{
     try{const current=this.#guard?.capture(this.#state.candidate!.generation,'candidate-integrity-recheck');
@@ -2099,10 +1953,11 @@ export class CentralOrchestrator {
   #recordValue(id:string,kind?:ContextRecord['kind']):unknown{const record=this.#records.get(id);if(!record||(kind&&record.kind!==kind))throw new OrchestratorError('ORCHESTRATOR_STATE_INVALID');return record.value}
   #addRecord(id:string,kind:ContextRecord['kind'],value:any):void{const existing=this.#records.get(id);if(existing){if(existing.kind!==kind||canonicalize(existing.value)!==canonicalize(value))throw new OrchestratorError('RESULT_CONTRADICTORY');return}if(this.#store&&kind!=='ArtifactRef')this.#store.put(id,canonicalize(value));this.#records.set(id,{id,kind,value} as ContextRecord)}
   #requireQuiescent():void{
+    if(this.#store&&inspectHostCommandRecovery(this.#store.root,{state:this.#state,records:[...this.#records.values()],events:this.#events}).status!=='QUIESCENT')throw new Error('HOST_COMMAND_TERMINATION_UNPROVEN');
     if(this.#state.runs.some(run=>!runQuiescent(run)))throw new OrchestratorError('ORCHESTRATOR_BLOCKED');
   }
   #requireDispatch(role:keyof RoleDispatchers,count=1):void{
-    if(this.#store&&!terminalDispatchers.has(this.#runners))throw new OrchestratorError('DURABLE_TERMINAL_PROOF_UNAVAILABLE');
+    if(this.#store&&!isRegisteredRoleDispatchers(this.#runners))throw new OrchestratorError('DURABLE_TERMINAL_PROOF_UNAVAILABLE');
     this.#requireQuiescent();
     if(!this.#runners[role])throw new OrchestratorError('ROLE_CAPABILITY_UNAVAILABLE');
     if(this.#state.counters.dispatches+count>this.spec.retryPolicy.maxDispatches)throw new OrchestratorError('ORCHESTRATOR_BLOCKED');

@@ -61,7 +61,7 @@ for(const kind of ['symlink','hardlink','parent-alias'])test(`cached ledger refu
 test('cold verification reads acquired bytes and refuses concurrent filesystem changes',t=>{
   const root=mkdtempSync(join(tmpdir(),'store-cache-change-'));t.after(()=>rmSync(root,{recursive:true,force:true}));const path=join(root,'value');writeFileSync(path,'old');
   const load=createVerifiedStoreCache((_root,read)=>{writeFileSync(path,'new');assert.equal(Buffer.from(read(path)).toString(),'old');return {ok:true}});
-  assert.throws(()=>load(root),/NAMESPACE_CHANGED/);
+  assert.throws(()=>load(root),error=>error.code==='STORE_NAMESPACE_CHANGED'&&error.diagnostic?.phase==='DECODE_RECHECK'&&error.diagnostic.path==='.');
 });
 test('in-place ABA with restored content and mtime never returns an unchecked cached result',t=>{
   const root=mkdtempSync(join(tmpdir(),'store-cache-aba-'));t.after(()=>rmSync(root,{recursive:true,force:true}));const path=join(root,'value');writeFileSync(path,'original');

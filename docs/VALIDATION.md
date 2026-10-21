@@ -4,7 +4,66 @@
 
 This is a development beta. The failures recorded during the initial publication have been investigated and corrected. Historical campaign reports and current automated checks describe different revisions.
 
-## Current verification — 18 October 2026
+## Publication verification — 21 October 2026
+
+Version **0.1.0-beta.4** supersedes the public beta.2. The complete portable run
+passed: **1,358 cases, 1,356 passed, 0 failed, 0 cancelled,
+2 default skips**, across all 70 files listed by `npm test`. The run used four
+isolated file workers; `npm test` uses the same files serially. Source and test
+bytes remained fixed for this run. The skipped SSD cases were also executed
+separately on the actual SSD: **2/2 passed**.
+
+TypeScript checking and the isolated native tarball install/reinstall probe
+passed. Native Pi loaded the extension, 12 skills and 3 prompts; headless commands
+retained the required native-confirmation refusal. A separate integration probe
+used installed Pi and pi-subagents with an intentionally unreachable local
+endpoint: it verified the parent boundary, actual detached connection failure
+and proven termination, with no real-model request. These probes used fresh
+profiles, not the operator's personal credentials or active projects.
+
+The portable checks ran on Linux with Node.js 22.22.1, npm 9.2.0 and TypeScript
+5.9.3. The native probes used Pi 1.3.0 and pi-subagents 0.79.1. Public capability
+checks remain authoritative; these version observations do not guarantee every
+past or future provider. Synchronous filesystem/Git phases still exist, as
+explained in the [reliability plan](RELIABILITY-PLAN.md).
+
+The update includes shared candidate payloads, supervised asynchronous host
+checks, result/checkpoint persistence separated from agent failures, prepared
+review validation, and consistent proposal/memory delivery. Fresh confirmations,
+exact candidate checks, process evidence and historical budgets remain required.
+Shared snapshots require beta.3 or later; new asynchronous process evidence
+requires beta.4 or later on every machine that resumes the project.
+
+The complete logs, incoming/final diffs, source hashes, native-probe results and
+publication commit are retained in the author's external verification archive.
+Earlier reports below retain their original results. Raw sessions, credentials,
+private runtime state and verification logs are excluded from the public package.
+This publication does not certify completion of the separate real refactoring
+trial or a new real-model acceptance campaign.
+
+## Historical reliability verification — 19 October 2026
+
+Local development revision **0.1.0-beta.4**, not published or globally installed.
+The complete diagnostic run recorded **1,344 cases: 1,337 passed, 5 failed,
+2 default skips**, across all 70 portable test files in 25 minutes 59 seconds.
+It started before the final changes. Final affected groups passed **145/145**,
+**14/14** and **42/42**; groups overlap and must not be summed. All five reported
+failures have successful reruns. No second complete run after the last correction
+is claimed.
+
+Two failures were fixture preparation deadlines, two concerned bilingual documents
+and manual versions. The fifth exposed accepted Scout evidence being checked
+against the new Reviewer assignment. Original assignment binding, accepted-result
+membership and proven Scout termination are now checked together; negative cases
+retain rejection of altered or unproven evidence. TypeScript, inventory, links,
+diff and workspace checks passed. No real-model or new native Pi installation
+campaign was run for this revision. The source test project remains clean and
+byte-identical (357 Python files). See the [implementation plan](RELIABILITY-PLAN.md)
+for stages, timings and remaining synchronous filesystem/Git limitations.
+
+Verified with Node.js 22.23.3, npm 10.9.9 and TypeScript 5.9.3 on Linux.
+
+## Previous verification — 18 October 2026
 
 Final verification covers **1,305 distinct portable cases: 1,303 passed, 0 remaining failures, 2 default skips**, across a complete run and a final affected-suite rerun. The complete run itself recorded **1,302 passed, 1 failed, 2 skipped**. Its only failure came from a directory-substitution fixture that deleted and recreated a folder: the filesystem could reuse the same inode. The fixture now retains the original directory outside the worktree and asserts a distinct replacement; the complete Scope Guard suite then passed **13/13**. No runtime code changed after the complete run. This is combined coverage, not a claim of a single clean full run. TypeScript checking, package inventory, English-language checks and an isolated native Pi install/reinstall probe also passed. The probe verifies one extension, 12 skills and 3 prompts, and confirms that headless use cannot bypass the native confirmation.
 

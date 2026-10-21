@@ -1,7 +1,8 @@
+import { verifyGitProjectIdentity } from './git-project-identity.js';
 import { randomUUID } from 'node:crypto';
 import { projectCustodianRoot } from './project-storage.js';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, relative } from 'node:path';
 import { canonicalize, hashBytes, hashCanonical, parseJson, validateScalar, validateStructure } from './contracts.js';
 import type { CandidateManifest } from './contracts.js';
@@ -19,6 +20,8 @@ export function localRef(value:string):string {
   if(!/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]{0,200}$/.test(value)||value.includes('..')||value.includes('//')||value.includes('@{')||value.split('/').some(p=>!p||p.endsWith('.')||p.endsWith('.lock')||p.startsWith('.')))fail('GIT_REF_INVALID');return value;
 }
 const inside=(a:string,b:string)=>{const p=relative(a,b);return p===''||(!p.startsWith('..')&&!p.startsWith('/'))};
+const SHARED_SNAPSHOT_STORAGE='{"schemaVersion":2,"objects":"../../.objects"}\n';
+export interface SnapshotStorageProgress {readonly phase:'verify'|'share'|'cleanup';readonly completed:number;readonly total:number;readonly removedBytes?:number;readonly removedFiles?:number}
 /** Host-only bounded primitives. No model/caller supplied Git command executor is exported. */
 export class CandidateGit {
   readonly hooks:string;
@@ -108,11 +111,10 @@ export class CandidateGit {
   }
   bootstrapRestoreIndex(commit:string):void {const path=join(this.repo,'.git','index');try{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>16*1024*1024)fail('GREENFIELD_RECOVERY_AMBIGUOUS')}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error}if(this.#run(this.repo,['ls-files','-z']))fail('GREENFIELD_RECOVERY_AMBIGUOUS');this.#run(this.repo,['read-tree',oid(commit)])}
   static verifyProjectIdentity(repo:string,projectId:string,baseline:string):void {
-    const run=(args:string[])=>CandidateGit.#execute(repo,'',args);
-    if(run(['rev-list','--parents','-n','1',oid(baseline)])!==baseline||run(['ls-tree','-r','--name-only',baseline])||
-      run(['show','-s','--format=%B',baseline]).trim()!==`chore: initialize project baseline\n\nControlled-Dev-Project: ${projectId}`)fail('GREENFIELD_PROJECT_ID_INVALID');
-    run(['merge-base','--is-ancestor',baseline,'HEAD']);
+    try{verifyGitProjectIdentity(repo,projectId,oid(baseline),args=>CandidateGit.#execute(repo,'',args))}
+    catch(error){if((error as {code?:string}).code==='GREENFIELD_PROJECT_ID_INVALID')fail('GREENFIELD_PROJECT_ID_INVALID');throw error}
   }
+
   head(cwd=this.repo):string{return oid(this.#run(cwd,['rev-parse','--verify','HEAD']))}
   refHead(ref:string):string{return oid(this.#run(this.repo,['rev-parse','--verify',localRef(ref)]))}
   target():string {try{return localRef(this.#run(this.repo,['symbolic-ref','--quiet','HEAD']))}catch{fail('GIT_LOCAL_TARGET_REQUIRED')}}
@@ -167,18 +169,21 @@ export class CandidateGit {
   #captureSnapshot(root:string,manifest:CandidateManifest,snapshotRoot:string,staged:boolean):void {
     this.#path(root);this.#snapshotPath(snapshotRoot,true,staged);this.#snapshotManifest(manifest);
     if(hashCanonical(workspaceManifest(root,manifest.baseCommit))!==hashCanonical(manifest))fail('GIT_CANDIDATE_CHANGED');
-    if(existsSync(snapshotRoot)){this.#readSnapshot(snapshotRoot,manifest);if(hashCanonical(workspaceManifest(root,manifest.baseCommit))!==hashCanonical(manifest))fail('GIT_CANDIDATE_CHANGED');return}
+    if(existsSync(snapshotRoot)){this.#readSnapshot(snapshotRoot,manifest,staged);if(hashCanonical(workspaceManifest(root,manifest.baseCommit))!==hashCanonical(manifest))fail('GIT_CANDIDATE_CHANGED');return}
     const staging=snapshotRoot+'.pending-'+randomUUID();if(existsSync(staging))fail('GIT_SNAPSHOT_EXISTS');
-    mkdirSync(staging,{mode:0o700});mkdirSync(join(staging,'objects'),{mode:0o700});
+    mkdirSync(staging,{mode:0o700});const objects=this.#sharedSnapshotObjects(staging,true,staged);
     for(const entry of manifest.entries){
       const path=join(root,entry.path),stat=lstatSync(path);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>512*1024*1024||realpathSync(path)!==path)fail('GIT_UNSUPPORTED_FILE');
       const bytes=readFileSync(path);if(hashBytes(bytes)!==entry.contentHash)fail('GIT_CANDIDATE_CHANGED');
-      const blob=join(staging,'objects',entry.contentHash);if(!existsSync(blob))this.#snapshotWrite(blob,bytes);
+      const blob=join(objects,entry.contentHash);
+      if(existsSync(blob)){if(hashBytes(this.#snapshotBytes(blob,512*1024*1024))!==entry.contentHash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH')}
+      else this.#snapshotWrite(blob,bytes);
     }
     this.#snapshotWrite(join(staging,'manifest.json'),canonicalize(manifest));
-    this.#readSnapshot(staging,manifest);
+    this.#snapshotWrite(join(staging,'storage.json'),SHARED_SNAPSHOT_STORAGE);
+    this.#readSnapshot(staging,manifest,staged);
     if(hashCanonical(workspaceManifest(root,manifest.baseCommit))!==hashCanonical(manifest))fail('GIT_CANDIDATE_CHANGED');
-    for(const directory of [join(staging,'objects'),staging]){const fd=openSync(directory,'r');try{fsyncSync(fd)}finally{closeSync(fd)}}
+    for(const directory of [objects,staging]){const fd=openSync(directory,'r');try{fsyncSync(fd)}finally{closeSync(fd)}}
     renameSync(staging,snapshotRoot);const fd=openSync(dirname(snapshotRoot),'r');try{fsyncSync(fd)}finally{closeSync(fd)}
   }
   /** Restore only a fresh external worktree from an exact previously observed manifest.
@@ -204,12 +209,16 @@ export class CandidateGit {
     for(const entry of manifest.entries){
       const path=join(root,entry.path);mkdirSync(dirname(path),{recursive:true});if(realpathSync(dirname(path))!==dirname(path))fail('GIT_SNAPSHOT_PATH_INVALID');
       if(existsSync(path)){const stat=lstatSync(path);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)fail('GIT_UNSUPPORTED_FILE')}
-      writeFileSync(path,readFileSync(blobs.get(entry.contentHash)!));chmodSync(path,entry.mode==='100755'?0o755:0o644);
+      // Git has already checked out the baseline. Preserve byte-identical files
+      // rather than rewriting thousands of unchanged assets during restoration.
+      const wantedMode=entry.mode==='100755'?0o755:0o644;
+      if(!existsSync(path)||hashBytes(readFileSync(path))!==entry.contentHash)writeFileSync(path,readFileSync(blobs.get(entry.contentHash)!));
+      if((lstatSync(path).mode&0o777)!==wantedMode)chmodSync(path,wantedMode);
     }
     if(hashCanonical(workspaceManifest(root,manifest.baseCommit))!==hashCanonical(manifest))fail('GIT_SNAPSHOT_DIGEST_MISMATCH');
   }
   verifyCandidateSnapshot(snapshotRoot:string,manifest:CandidateManifest):void {this.#snapshotPath(snapshotRoot);this.#snapshotManifest(manifest);this.#readSnapshot(snapshotRoot,manifest)}
-  verifyCandidateSnapshotStaged(snapshotRoot:string,manifest:CandidateManifest):void {this.#snapshotPath(snapshotRoot,false,true);this.#snapshotManifest(manifest);this.#readSnapshot(snapshotRoot,manifest)}
+  verifyCandidateSnapshotStaged(snapshotRoot:string,manifest:CandidateManifest):void {this.#snapshotPath(snapshotRoot,false,true);this.#snapshotManifest(manifest);this.#readSnapshot(snapshotRoot,manifest,true)}
   #snapshotPath(root:string,createParents=false,staged=false):void {
     const custodian=staged?undefined:projectCustodianRoot(this.repo);if(!staged&&!custodian)fail('GIT_SNAPSHOT_CUSTODIAN_REQUIRED');
     const anchor=staged?this.data:this.repo,parent=staged?join(this.data,'controlled-dev','project-handoff-staging'):join(custodian!,'candidates');
@@ -227,17 +236,77 @@ export class CandidateGit {
       ||new Set(manifest.entries.map(entry=>entry.path)).size!==manifest.entries.length)fail('GIT_SNAPSHOT_MANIFEST_INVALID');
   }
   #snapshotWrite(path:string,bytes:string|Uint8Array):void {const fd=openSync(path,'wx',0o600);try{writeFileSync(fd,bytes);fsyncSync(fd)}finally{closeSync(fd)}}
-  #readSnapshot(root:string,manifest:CandidateManifest):Map<string,string> {
-    const file=(path:string,max:number)=>{const stat=lstatSync(path);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>max||realpathSync(path)!==path)fail('GIT_SNAPSHOT_INVALID');return readFileSync(path)};
-    if(readdirSync(root).sort().join(',')!=='manifest.json,objects')fail('GIT_SNAPSHOT_INVALID');
-    const raw=file(join(root,'manifest.json'),64*1024*1024),parsed=parseJson(raw,64*1024*1024);
+  #snapshotBytes(path:string,max:number):ReturnType<typeof readFileSync>{const stat=lstatSync(path);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>max||realpathSync(path)!==path)fail('GIT_SNAPSHOT_INVALID');return readFileSync(path)}
+  #sharedSnapshotObjects(root:string,create=false,staged=false):string{
+    const objects=join(dirname(dirname(root)),'.objects');
+    this.#snapshotPath(join(objects,'object-path-check'),create,staged);return objects;
+  }
+  *#snapshotReadSteps(root:string,manifest:CandidateManifest,staged=false):Generator<void,Map<string,string>> {
+    const names=readdirSync(root).sort().join(','),shared=['manifest.json,storage.json','manifest.json,objects,storage.json'].includes(names);
+    if(!shared&&names!=='manifest.json,objects')fail('GIT_SNAPSHOT_INVALID');
+    if(shared&&this.#snapshotBytes(join(root,'storage.json'),4096).toString('utf8')!==SHARED_SNAPSHOT_STORAGE)fail('GIT_SNAPSHOT_INVALID');
+    const raw=this.#snapshotBytes(join(root,'manifest.json'),64*1024*1024),parsed=parseJson(raw,64*1024*1024);
     if(canonicalize(parsed)!==canonicalize(manifest)||canonicalize(parsed)!==raw.toString('utf8'))fail('GIT_SNAPSHOT_DIGEST_MISMATCH');
-    const objects=join(root,'objects'),stat=lstatSync(objects);if(!stat.isDirectory()||stat.isSymbolicLink()||realpathSync(objects)!==objects)fail('GIT_SNAPSHOT_INVALID');
+    const objects=shared?this.#sharedSnapshotObjects(root,false,staged):join(root,'objects'),stat=lstatSync(objects);if(!stat.isDirectory()||stat.isSymbolicLink()||realpathSync(objects)!==objects)fail('GIT_SNAPSHOT_INVALID');
+    if(shared&&existsSync(join(root,'objects'))){const legacy=lstatSync(join(root,'objects'));if(!legacy.isDirectory()||legacy.isSymbolicLink()||realpathSync(join(root,'objects'))!==join(root,'objects'))fail('GIT_SNAPSHOT_INVALID')}
     const hashes=[...new Set(manifest.entries.map(entry=>entry.contentHash))].sort();
-    if(canonicalize(readdirSync(objects).sort())!==canonicalize(hashes))fail('GIT_SNAPSHOT_INVALID');
+    if(!shared&&canonicalize(readdirSync(objects).sort())!==canonicalize(hashes))fail('GIT_SNAPSHOT_INVALID');
     const blobs=new Map<string,string>();let total=0;
-    for(const hash of hashes){const bytes=file(join(objects,hash),512*1024*1024);total+=bytes.byteLength;if(total>2*1024*1024*1024)fail('GIT_SNAPSHOT_LIMIT');if(hashBytes(bytes)!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH');blobs.set(hash,join(objects,hash))}
+    for(const hash of hashes){const bytes=this.#snapshotBytes(join(objects,hash),512*1024*1024);total+=bytes.byteLength;if(total>2*1024*1024*1024)fail('GIT_SNAPSHOT_LIMIT');if(hashBytes(bytes)!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH');blobs.set(hash,join(objects,hash));yield}
     return blobs;
+  }
+  #readSnapshot(root:string,manifest:CandidateManifest,staged=false):Map<string,string>{const steps=this.#snapshotReadSteps(root,manifest,staged);let next;do{next=steps.next()}while(!next.done);return next.value}
+  /** Read-only inspection and format migration share the actual snapshot reader.
+   * The caller owns the project lease; no stored JSON becomes action authority. */
+  async inspectSnapshotStorage(root:string,manifest:CandidateManifest,boundary:()=>Promise<void>=async()=>{},progress?:(value:SnapshotStorageProgress)=>void){
+    this.#snapshotPath(root);this.#snapshotManifest(manifest);const steps=this.#snapshotReadSteps(root,manifest);let next,completed=0;
+    const total=new Set(manifest.entries.map(e=>e.contentHash)).size;
+    while(!(next=steps.next()).done){progress?.({phase:'verify',completed:++completed,total});await boundary()}
+    const shared=existsSync(join(root,'storage.json')),legacy=join(root,'objects'),legacyBlobs=shared?new Map<string,string>():next.value;
+    if(shared&&existsSync(legacy))for(const hash of readdirSync(legacy).sort()){
+      if(!next.value.has(hash))fail('GIT_SNAPSHOT_INVALID');const path=join(legacy,hash);
+      if(hashBytes(this.#snapshotBytes(path,512*1024*1024))!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH');legacyBlobs.set(hash,path);await boundary();
+    }
+    return {shared,blobs:next.value,legacyBlobs};
+  }
+  async shareSnapshotStorage(root:string,manifest:CandidateManifest,boundary:()=>Promise<void>,progress?:(value:SnapshotStorageProgress)=>void):Promise<{removedBytes:number;removedFiles:number}>{
+    const before=await this.inspectSnapshotStorage(root,manifest,boundary,progress),objects=this.#sharedSnapshotObjects(root,true);let completed=0;
+    for(const [hash,path] of before.blobs){
+      await boundary();const bytes=this.#snapshotBytes(path,512*1024*1024);if(hashBytes(bytes)!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH');
+      const destination=join(objects,hash);
+      if(existsSync(destination)){if(hashBytes(this.#snapshotBytes(destination,512*1024*1024))!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH')}
+      else this.#snapshotWrite(destination,bytes);
+      progress?.({phase:'share',completed:++completed,total:before.blobs.size});
+    }
+    const fd=openSync(objects,'r');try{fsyncSync(fd)}finally{closeSync(fd)}
+    await boundary();
+    if(!before.shared){
+      // A crash before atomic publication leaves the original container readable.
+      // The unreferenced temporary is outside that container and is never removed
+      // by automatic cleanup, just like other unknown saved evidence.
+      const temp=join(dirname(root),`shared-format-${randomUUID()}.pending`);
+      this.#snapshotWrite(temp,SHARED_SNAPSHOT_STORAGE);renameSync(temp,join(root,'storage.json'));
+      const fd=openSync(root,'r');try{fsyncSync(fd)}finally{closeSync(fd)}
+      const parent=openSync(dirname(root),'r');try{fsyncSync(parent)}finally{closeSync(parent)}
+    }
+    // The shared representation is fully durable and independently readable
+    // before removing any duplicate. A pause leaves either representation usable.
+    let removedBytes=0,removedFiles=0;const legacy=join(root,'objects');
+    if(existsSync(legacy)){
+      completed=0;
+      for(const hash of before.blobs.keys()){
+        await boundary();const path=join(legacy,hash);
+        if(existsSync(path)){
+          const bytes=this.#snapshotBytes(path,512*1024*1024);
+          if(hashBytes(bytes)!==hash||hashBytes(this.#snapshotBytes(join(objects,hash),512*1024*1024))!==hash)fail('GIT_SNAPSHOT_DIGEST_MISMATCH');
+          unlinkSync(path);removedBytes+=bytes.byteLength;removedFiles++;
+        }
+        progress?.({phase:'cleanup',completed:++completed,total:before.blobs.size,removedBytes,removedFiles});
+      }
+      if(readdirSync(legacy).length)fail('GIT_SNAPSHOT_INVALID');rmdirSync(legacy);
+      const fd=openSync(root,'r');try{fsyncSync(fd)}finally{closeSync(fd)}
+    }
+    await this.inspectSnapshotStorage(root,manifest,boundary,progress);return {removedBytes,removedFiles};
   }
   candidateCommit(root:string,ref:string,base:string,manifest:CandidateManifest,message:string):string {
     localRef(ref);oid(base);if(this.#run(root,['symbolic-ref','HEAD'])!==ref||this.head(root)!==base||this.refHead(ref)!==base)fail('GIT_CANDIDATE_REF_CHANGED');

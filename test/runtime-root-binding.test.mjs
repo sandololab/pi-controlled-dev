@@ -91,3 +91,25 @@ test('successive transfer retains raw assignment/run paths through a previous au
  for(const options of [{foreignPrevious:true},{extraSpawn:true}])assert.throws(()=>verify(nextImport(fixture(),options)),/BINDING_INVALID/);
  const f=nextImport(fixture());f.records=f.records.filter(r=>r.id!=='binding');assert.throws(()=>verify(f),/BINDING_INVALID/);
 });
+
+test('a verified candidate captured immediately before a checkpoint failure resumes at checks, never at its Developer',()=>{
+ const f=fixtures(api),candidate=f.Candidate;
+ const run={...f.RunRecord,role:'Developer',status:'TERMINAL',resultRef:'accepted-result',terminalProofRef:'terminal'};
+ const result={...f.DeveloperResult,id:undefined};delete result.id;delete result.blockedReason;
+ const previous={...f.WorkflowState,revision:4,state:'IMPLEMENTING',candidate};
+ const state={...previous,revision:5,state:'BLOCKED',blockedReason:'Developer dispatch/result failed',pendingGateId:undefined,runs:[run],results:['accepted-result'],invalidEvidenceIds:[]};
+ const records=[{id:'accepted-result',kind:'DeveloperResult',value:result},{id:'previous',kind:'WorkflowState',value:previous}];
+ const events=[{...f.TransitionEvent,revision:4,kind:'RECORD',recordType:'CANDIDATE_MATERIALIZED',sourceState:'IMPLEMENTING',targetState:'IMPLEMENTING',evidenceRefs:[candidate.manifest.id]},
+ {...f.TransitionEvent,revision:5,previousRevision:4,kind:'TRANSITION',transitionId:'TR-015',reason:state.blockedReason,sourceState:'IMPLEMENTING',targetState:'BLOCKED'}];
+ assert.equal(rb.runtimeRebindResumeState(state,records,events),'TESTING');
+ const recovered={...state,revision:6};const takeover={...f.TransitionEvent,revision:6,kind:'RECORD',recordType:'RECONCILED',sourceState:'BLOCKED',targetState:'BLOCKED'};
+ assert.equal(rb.runtimeRebindResumeState(recovered,records,[...events,takeover]),'TESTING');
+ for(const change of [s=>s.candidate=undefined,s=>s.runs[0].status='UNKNOWN',s=>s.runs[0].resultRef=undefined,
+  s=>s.blockedReason='Candidate scope/integrity failed',s=>s.invalidEvidenceIds=[candidate.manifest.id]]){
+  const altered=structuredClone(state);change(altered);assert.equal(rb.runtimeRebindResumeState(altered,records,events),'BLOCKED');
+ }
+ const blocked=structuredClone(records);blocked[0].value.blockedReason='Developer could not finish';assert.equal(rb.runtimeRebindResumeState(state,blocked,events),'BLOCKED');
+ assert.equal(rb.runtimeRebindResumeState(state,records,events.slice(1)),'BLOCKED');
+ assert.equal(rb.runtimeRebindResumeState(recovered,records,[...events,{...takeover,recordType:'CANDIDATE_MATERIALIZED'}]),'BLOCKED');
+ assert.equal(rb.runtimeRebindResumeState(state,records,events.map(e=>({...e,sourceState:'READY'}))),'BLOCKED');
+});

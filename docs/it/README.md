@@ -6,6 +6,8 @@ README, interfaccia terminale, prompt inclusi ed etichette generate sono in ingl
 
 | Guida | Italiano | English |
 |---|---|---|
+| Affidabilità: piano e verifiche | [Leggi](RELIABILITY-PLAN.md) | [Read](../RELIABILITY-PLAN.md) |
+| Ridurre le copie salvate | [Leggi](CANDIDATE-STORAGE.md) | [Read](../CANDIDATE-STORAGE.md) |
 | Manuale utente | [Leggi](USER-MANUAL.md) | [Read](../../USER-MANUAL.md) |
 | Progetti correnti e importazione sorgenti | [Leggi](SOURCE-REFACTORING.md) | [Read](../SOURCE-REFACTORING.md) |
 | Pianificazione | [Leggi](PROJECT-PLANNING.md) | [Read](../PROJECT-PLANNING.md) |

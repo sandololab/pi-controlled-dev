@@ -1,3 +1,5 @@
+import { executeSupervisedCommand } from './host-command.js';
+import type { HostCommandOptions, HostCommandExecution } from './host-command.js';
 import { runQuiescent } from './run-quiescence.js';
 import { spawnSync } from 'node:child_process';
 import { Buffer } from 'node:buffer';
@@ -29,7 +31,7 @@ export function executeHostValidationCommand(command:CommandSpec,root:string){
 }
 export function isExecutedValidation(value:ValidationResult):boolean{return executed.has(value)}
 export interface ValidationProcessProof {
-  readonly schemaVersion:1; readonly source:'node-spawnSync'; readonly taskId:string; readonly specHash:string;
+  readonly schemaVersion:1; readonly source:'node-spawnSync'|'node-spawn'; readonly taskId:string; readonly specHash:string;
   readonly commandHash:string; readonly candidateDigest:string; readonly candidateGeneration:number; readonly cwd:string;
   readonly pid:number; readonly exitCode:number|null; readonly signal:string|null; readonly startedAt:string; readonly endedAt:string;
   readonly timedOut:boolean; readonly logDigest:string; readonly postCandidateDigest:string;
@@ -50,21 +52,31 @@ export function runApprovedValidation(spec:TaskSpec,state:WorkflowState,commandI
 }
 /** Project callers retain a separate exact baseline/run envelope in the project store.
  * Sharing process/evidence machinery never creates a WorkflowState or accepts task results. */
-export function collectValidationEvidence(command:CommandSpec,store:DurableStore,binding:{taskId:string;specHash:string;
-  candidate:{root:string;baseCommit:string;digest:string;generation:number};criteria:readonly Criterion[];createdAt:string;
-  patchRef?:string;trackedBaseline?:boolean;scenario?:import('./scenario-management.js').ExecutableScenario}){
+export interface ValidationBinding {readonly taskId:string;readonly specHash:string;
+  readonly candidate:{readonly root:string;readonly baseCommit:string;readonly digest:string;readonly generation:number};readonly criteria:readonly Criterion[];readonly createdAt:string;
+  readonly patchRef?:string;readonly trackedBaseline?:boolean;readonly scenario?:import('./scenario-management.js').ExecutableScenario}
+export function collectValidationEvidence(command:CommandSpec,store:DurableStore,binding:ValidationBinding){
+  const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(binding.candidate.root,binding.candidate.baseCommit):workspaceManifest(binding.candidate.root,binding.candidate.baseCommit));
+  if(digest()!==binding.candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
+  return finishValidationEvidence(command,store,binding,executeHostValidationCommand(command,binding.candidate.root));
+}
+export async function collectValidationEvidenceAsync(command:CommandSpec,store:DurableStore,binding:ValidationBinding,options:HostCommandOptions={}){
+  const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(binding.candidate.root,binding.candidate.baseCommit):workspaceManifest(binding.candidate.root,binding.candidate.baseCommit));
+  if(digest()!==binding.candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
+  const execution=await executeSupervisedCommand(command,binding.candidate.root,store,{taskId:binding.taskId,specHash:binding.specHash,candidateDigest:binding.candidate.digest,candidateGeneration:binding.candidate.generation},{...options,onProgress:event=>options.onProgress?.({...event,description:binding.criteria.find(c=>c.commandIds.includes(command.id))?.text??'Approved automated check'})});
+  return finishValidationEvidence(command,store,binding,execution);
+}
+function finishValidationEvidence(command:CommandSpec,store:DurableStore,binding:ValidationBinding,execution:ReturnType<typeof executeHostValidationCommand>|HostCommandExecution){
   const candidate=binding.candidate,commandId=command.id;
   const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(candidate.root,candidate.baseCommit):workspaceManifest(candidate.root,candidate.baseCommit));
-  if(digest()!==candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
-  // ponytail: 64 KiB combined output ceiling; use bounded file-backed capture if larger logs are required.
-  const {startedAt,endedAt,child:process}=executeHostValidationCommand(command,candidate.root);
+  const {startedAt,endedAt,child:process}=execution;
   // Store only bounded, redacted output. The child cannot turn free-form log text
   // into validation authority; structured events are extracted separately.
   const stdout=String(process.stdout??''),stderr=String(process.stderr??'');
   const safeOut=redactRuntimeText(stdout),safeErr=redactRuntimeText(stderr);
   const log=canonicalize({stdout:safeOut.text,stderr:safeErr.text}),logDigest=hashBytes(Buffer.from(log));
   const postCandidateDigest=digest(),timedOut=process.error?.code==='ETIMEDOUT';
-  const proof:ValidationProcessProof={schemaVersion:1,source:'node-spawnSync',taskId:binding.taskId,specHash:binding.specHash,
+  const proof:ValidationProcessProof={schemaVersion:1,source:'source' in execution?execution.source:'node-spawnSync',taskId:binding.taskId,specHash:binding.specHash,
     commandHash:hashCanonical(command),candidateDigest:candidate.digest,candidateGeneration:candidate.generation,cwd:candidate.root,
     pid:process.pid,exitCode:process.status,signal:process.signal,startedAt,endedAt,timedOut,logDigest,postCandidateDigest};
   const token=hashCanonical(proof).slice(0,24),logRef=store.put(`validation-log-${token}`,log),proofRef=store.put(`validation-proof-${token}`,canonicalize(proof));
@@ -109,13 +121,13 @@ export function collectValidationEvidence(command:CommandSpec,store:DurableStore
     canonicalize(scenarioRun),SCENARIO_RUN_MEDIA_TYPE);
   const bundle=createTechnicalEvidenceBundle(scenario,[scenarioRun],binding.criteria,{...(binding.patchRef?{patchRef:binding.patchRef}:{}),
     extraArtifactRefs:[scenarioRef.id,runRef.id]}),bundleRef=store.put(bundle.bundleId,canonicalize(bundle),EVIDENCE_BUNDLE_MEDIA_TYPE);
-  executed.add(result);return {result,artifacts:[logRef,proofRef,eventRef,evidenceRef,scenarioRef,runRef,bundleRef]};
+  executed.add(result);return {result,artifacts:[...('artifacts' in execution?execution.artifacts:[]),logRef,proofRef,eventRef,evidenceRef,scenarioRef,runRef,bundleRef]};
 }
 export function verifyValidationProcessProof(input:unknown,result:ValidationResult,state:WorkflowState,log:Uint8Array):boolean{
   try{
     const p=JSON.parse(canonicalize(input));
     if(Object.keys(p).sort().join(',')!==['schemaVersion','source','taskId','specHash','commandHash','candidateDigest','candidateGeneration','cwd','pid',
-      'exitCode','signal','startedAt','endedAt','timedOut','logDigest','postCandidateDigest'].sort().join(',')||p.schemaVersion!==1||p.source!=='node-spawnSync')return false;
+      'exitCode','signal','startedAt','endedAt','timedOut','logDigest','postCandidateDigest'].sort().join(',')||p.schemaVersion!==1||!['node-spawnSync','node-spawn'].includes(p.source))return false;
     return p.taskId===result.taskId&&p.taskId===state.taskId&&p.specHash===result.specHash&&p.specHash===state.specHash
       &&p.commandHash===result.commandHash&&p.candidateDigest===result.candidateDigest&&p.candidateDigest===state.candidate?.digest
       &&p.candidateGeneration===result.candidateGeneration&&p.candidateGeneration===state.candidate?.generation&&p.cwd===state.candidate?.root&&Number.isSafeInteger(p.pid)&&p.pid>0

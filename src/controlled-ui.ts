@@ -74,10 +74,22 @@ export function displayLines(lines:readonly string[],width:number):string[] {
     out.push(row);return out;
   });
 }
-export function errorPresentation(error:unknown):{message:string;code:string;path?:string} {
+export function errorPresentation(error:unknown):{message:string;code:string;path?:string;diagnostic?:{phase:string;path:string}} {
   const raw=error instanceof Error?error.message:'';
   const code=(error as {code?:string})?.code?.match(/^[A-Z][A-Z0-9_]{1,90}$/)?.[0]??raw.match(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/)?.[0]??'CONTROLLED_ACTION_FAILED';
   const known:Record<string,string>={
+    HOST_COMMAND_TERMINATION_UNPROVEN:"A previous check has no verified end record. Work remains saved and protected. Check the host-command details before resuming; no new check or agent has started.",
+    HOST_COMMAND_SUPERVISION_UNAVAILABLE:"This computer cannot provide the process supervision required for the approved checks. Work remains stopped. Check local process visibility before retrying.",
+    HOST_COMMAND_BUSY:"An approved check is already running for this task. Open Status and wait for its result before starting another check.",
+    HOST_COMMAND_ASYNC_REQUIRED:"This task uses supervised checks. Continue through the normal validation action so progress and completion remain recorded. No new command has started.",
+    PROJECT_RESULT_SAVE_FAILED:"The agent has finished, but saving its candidate files failed. Keep the working copy and protective permissions. Use /controlled-dev checkpoint in this session to retry saving the same result. No new agent is needed; incomplete or corrupt storage still requires repair.",
+    PROJECT_CHECKPOINT_SAVE_FAILED:"Saved task data is preserved, but its portable checkpoint could not be completed. Keep the working copy and protective permissions. Use /controlled-dev checkpoint to retry saving; no agent will be started.",
+    INVALID_REVIEW_PACKET:"Independent review has not started: the saved review data failed a consistency check. The candidate is preserved. Check the indicated field before retrying; implementation does not need to be repeated.",
+    CANDIDATE_STORAGE_CLOSE_REQUIRED:"Close Pi normally at a safe point and reopen it before reducing saved copies. This maintenance requires a released project with no active task controller.",
+    CANDIDATE_STORAGE_CHANGED:"Saved copies changed during the storage proposal. No cleanup was authorized. Preserve the files and request an updated proposal.",
+    CANDIDATE_STORAGE_LIMIT:"The saved copies exceed this maintenance step's verified size limit. No cleanup was authorized. Preserve the copies and review the storage inventory.",
+    CANDIDATE_STORAGE_PATH_INVALID:"A saved-copy path cannot be verified. Storage reduction remains stopped and preserves the copies.",
+    CANDIDATE_STORAGE_BUSY:"A storage reduction is already running. Use Alt+I to request a pause after the current file.",
     PROJECT_HANDOFF_ROLE_NOT_QUIESCENT:"A previous agent has not been confirmed as terminated. The move remains stopped and preserves the data. Check task status before resuming.",
     PROJECT_HANDOFF_SOURCE_CHANGED:"Project data changed during the move. Work is preserved: review the status before resuming the move.",
     PROJECT_HANDOFF_RECOVERY_CONFLICT:"Documents or data changed after the interruption. Recovery preserves both sides and requires a decision about which changes to keep.",
@@ -87,6 +99,8 @@ export function errorPresentation(error:unknown):{message:string;code:string;pat
     PROJECT_REBIND_REQUIRED:"This task was saved in a previous folder. Choose Resume transferred project to check the work and confirm resuming it in the current folder.",
     PROJECT_RUNTIME_IMPORT_REQUIRED:"The project was saved and released on shutdown: there are no old locks to recover. Choose Resume transferred project or use /controlled-dev project resume-storage, even in the same folder. The work will be checked and presented for a new local confirmation before acquiring control.",
     PAYLOAD_LIMIT:"The data to verify exceeds the limit for this step. Resuming may be incomplete: check the status and preserve files and protective locks before retrying.",
+    PROJECT_HANDOFF_LIMIT:"Saving the project exceeded a storage-check limit. Completed agent work and candidate files are preserved; do not repeat implementation. Check the saved task and technical details before resuming its checks.",
+    HOST_VERIFICATION_TERMINATION_UNPROVEN:"The previous process ended, but recovery in the same working folder cannot rule out an unfinished host command. Saved work and used attempts are preserved. For a project already saved in its own folder, choose Resume transferred project: it checks the saved candidate and asks to close the old permissions before restoring a separate copy with new checks and local permissions.",
     TAKEOVER_OWNER_DEATH_UNPROVEN:"There is insufficient evidence to recover the previous control. The task remains stopped: check the status and preserve data and protective locks. A missing lock alone does not prove that previous agents have terminated.",
     PROJECT_RUNTIME_IMPORT_RELEASE_REQUIRED:"The previous instance has not handed over the project for transfer. Shut down Pi normally in the previous folder and check the saved data before resuming here. Copying data does not prove that previous processes have terminated.",
     PROJECT_RUNTIME_IMPORT_RECONCILIATION_REQUIRED:"Termination of all previous agents has not yet been verified. Resuming remains blocked: check the status and processes before continuing.",
@@ -155,7 +169,7 @@ export function errorPresentation(error:unknown):{message:string;code:string;pat
     LEGACY_CANDIDATE_NOT_AUTOPROMOTABLE:"This historical task has no verifiable Git binding. Its candidate remains available for inspection but cannot be integrated automatically.",
     RESULT_SCHEMA_INVALID:"The response is missing required data or does not match the assignment. The task remains stopped; check the technical details to identify the problem.",
     INVALID_STRUCTURED_OUTPUT:"The agent's response contains incomplete or invalid data. The task has not been declared complete. Check Status and the technical details before retrying.",
-    PRE_TASK_PROPOSAL_INVALID:"The Scout returned a proposal that cannot be verified. No task was created.",
+    PRE_TASK_PROPOSAL_INVALID:"The Scout's proposal failed a consistency check. No task was created and no code change was accepted. Check the response format before requesting another analysis.",
     PROJECT_CONTEXT_INCOMPLETE:"An answer needed to define the work is still missing. Reopen /controlled-dev to continue from the saved clarifications.",
     PROJECT_TASK_REFINEMENT_REQUIRED:"This task still represents a broad body of work. Choose Break down the work and prepare specific increments before starting it.",
     PROJECT_REFINEMENT_STALE:"The plan or context changed. Reopen Break down the work to choose a task from the current plan.",
@@ -174,7 +188,7 @@ export function errorPresentation(error:unknown):{message:string;code:string;pat
     PROJECT_GOAL_STALE:"The context changed during analysis. The previous proposal was discarded; resume from the project using the saved answers.",
     PROJECT_CLARIFICATION_REPEATED:"The Scout repeated an already resolved question. Your answers are saved; request a new analysis from the project without entering them again.",
     PROJECT_PLAN_NEEDS_SCOPE_REVIEW:"Task analysis requires files outside the plan. Revise the plan to include them before authorizing automatic development.",
-    PRE_TASK_PROVIDER_CONNECTION_FAILED:"The Scout could not connect to the model service (fetch failed). No proposal was produced. Check the connection and model availability, then retry analysis from the saved project.",
+    PRE_TASK_PROVIDER_CONNECTION_FAILED:"The Scout could not finish because its model connection failed. No usable proposal was accepted. Check the connection and model availability before retrying analysis from the saved project.",
     CURRENT_PROJECT_AMBIGUOUS:"This folder contains multiple repositories. Start Pi in the project folder you want to work on: no additional project will be created here.",
     CURRENT_PROJECT_GIT_INVALID:"The folder contains unusable Git metadata. The project will not be overwritten; check the existing repository.",
     CURRENT_PROJECT_UNBORN:"The project is open, but the Git repository has no commit yet. Preserve your changes and prepare the first commit before starting work.",
@@ -182,6 +196,7 @@ export function errorPresentation(error:unknown):{message:string;code:string;pat
     CURRENT_PROJECT_DISCOVERY_LIMIT:"Project discovery reached the scan limit. Start Pi closer to the project folder.",
     CURRENT_PROJECT_CHANGED:"The folder changed during preparation. Reopen the project to review the current state; no source files will be overwritten.",
     CURRENT_PROJECT_SETUP_INTERRUPTED:"Preparing local history was interrupted. Files and evidence are preserved; check the repository before retrying.",
+    CANARY_UNSUPPORTED_ENTRY:"Project verification found a live socket, pipe or another unsupported file type. Stop the local service or move its working files outside the source tree, then retry. The Git baseline may already be saved; source files have not been overwritten.",
     PRE_TASK_SCOUT_FAILED:"The Scout ended without a usable proposal. The project and objective are saved; you can retry analysis from the project panel. The Scout session is listed in the technical details.",
     PRE_TASK_SCOUT_UNAVAILABLE:"The Scout is unavailable. Check that pi-subagents is installed and restart Pi.",
     PRE_TASK_PROPOSAL_UNAVAILABLE:"A new analysis cannot start yet. Check the previous Scout in /subagents-fleet; if it is active, stop that run. Then retry /controlled-dev project plan in the selected project.",
@@ -212,15 +227,33 @@ export function errorPresentation(error:unknown):{message:string;code:string;pat
     SCOUT_RECOVERY_UNAVAILABLE:"The previous analysis cannot be resumed with the available evidence and attempts. Open Status to read the reason and choose the next step.",
     DEVELOPER_RECOVERY_UNAVAILABLE:"Interrupted development cannot be resumed with the available evidence and attempts. The working copy is preserved; open Status before deciding how to continue.",
     NO_PENDING_GATE:"There are no pending confirmations.",
+    HUMAN_GATE_REOPEN_REQUIRED:"A confirmation is still saved, but this session cannot safely present it after an interrupted operation. Close Pi normally, reopen it and resume the saved task. Do not repeat the decision in this session.",
+    STORE_NAMESPACE_CHANGED:"Saved task files changed while they were being checked. The operation stopped; no new agent was started. Close Pi normally and resume the saved task before making another decision. Technical details identify the check that stopped.",
+    GATE_ALREADY_DECIDED:"This session already recorded a decision for that confirmation. After an interrupted operation, close Pi normally and resume the saved task so its recorded outcome can be checked before continuing.",
     HUMAN_CONFIRMATION_REQUIRED:"Open Decision from the menu to read the data and confirm in the Pi panel.",
   };
   // Bounded host-authored English messages may be shown. Unknown technical payloads stay withheld.
   const readable=/^(The |A |An |No |Cannot |Invalid |Enter |Select |Use |Before |Saved |Required |Nonempty |Objective |Repository |Task |Command |Controlled Dev )/.test(raw)&&!raw.includes('\n');
-  const reportedPath=(error as {path?:unknown})?.path;
+  const proposalField=(error as {diagnostic?:{validationPath?:unknown}})?.diagnostic?.validationPath;
+  const proposalPath=code==='PRE_TASK_PROPOSAL_INVALID'&&typeof proposalField==='string'&&proposalField.length<=256&&/^\$[.\[\]A-Za-z0-9_]*$/.test(proposalField)?proposalField:undefined;
+  const reportedPath=(error as {path?:unknown})?.path??proposalPath;
   const path=typeof reportedPath==='string'&&reportedPath.length<=1024?safeText(reportedPath):undefined;
+  const detail=(error as {diagnostic?:{phase?:unknown;path?:unknown}})?.diagnostic;
+  const diagnostic=['STORE_NAMESPACE_CHANGED','INVALID_REVIEW_PACKET'].includes(code)&&typeof detail?.phase==='string'&&/^[A-Z_]{1,64}$/.test(detail.phase)&&typeof detail.path==='string'&&detail.path.length<=1024?{phase:detail.phase,path:safeText(detail.path)}:undefined;
   const connectionFailure=(error as {diagnostic?:{providerFailure?:unknown}})?.diagnostic?.providerFailure==='CONNECTION_FAILED';
-  const message=(code==='PRE_TASK_PROPOSAL_UNCERTAIN'&&connectionFailure?"The Scout encountered a model connection error (fetch failed), and its termination has not yet been verified. No proposal was accepted. Check the run in /subagents-fleet; if it is active, stop it. /subagents-doctor checks the runtime, not the model connection. The project and objective are saved; after resolving the connection, use /controlled-dev project plan to recheck termination and request a new analysis.":known[code])??(readable?safeText(raw.replace(/\s*\([A-Z_]+\)/g,'')).slice(0,500):"The operation did not complete. Check the status and technical details before retrying.");
-  return {code,message:message+(path?`\nPath: ${path}`:''),...(path?{path}:{})};
+  const providerError=(error as {diagnostic?:{providerError?:unknown}})?.diagnostic?.providerError;
+  // Older connection diagnostics identified only fetch failure and lack a subtype.
+  const connectionLabel=providerError==='FETCH_FAILED'||providerError===undefined?'fetch failed'
+    :providerError==='WEBSOCKET_ERROR'?'WebSocket connection failed'
+    :providerError==='TERMINATED'?'connection ended unexpectedly':'connection error';
+  const connectionMessage=!connectionFailure?undefined
+    :code==='PRE_TASK_PROPOSAL_UNCERTAIN'
+      ?`The Scout encountered a model connection error (${connectionLabel}), and its termination has not yet been verified. No proposal was accepted. Check the run in /subagents-fleet; if it is active, stop it. /subagents-doctor checks the runtime, not the model connection. The project and objective are saved; after resolving the connection, use /controlled-dev project plan to recheck termination and request a new analysis.`
+      :code==='PRE_TASK_PROVIDER_CONNECTION_FAILED'
+        ?`The Scout lost its model connection (${connectionLabel}). No usable proposal was accepted. Its process ended; the project and objective are saved. Check the connection and model availability before requesting another analysis.`
+        :undefined;
+  const message=connectionMessage??known[code]??(readable?safeText(raw.replace(/\s*\([A-Z_]+\)/g,'')).slice(0,500):"The operation did not complete. Check the status and technical details before retrying.");
+  return {code,message:message+(path?`\n${proposalPath?'Response field':'Path'}: ${path}`:'')+(diagnostic&&code==='INVALID_REVIEW_PACKET'?`\nCheck: ${diagnostic.path}`:''),...(path?{path}:{}),...(diagnostic?{diagnostic}:{})};
 }
 export interface StatusPages {overview:string;activity:string;checks:string;technical:string}
 const activityStateLabels:Record<string,string>={

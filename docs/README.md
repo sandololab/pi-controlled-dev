@@ -6,6 +6,8 @@ The README, terminal interface, built-in prompts and generated interface labels 
 
 | Guide | English | Italiano |
 |---|---|---|
+| Reliability and implementation plan | [Read](RELIABILITY-PLAN.md) | [Leggi](it/RELIABILITY-PLAN.md) |
+| Smaller saved copies | [Read](CANDIDATE-STORAGE.md) | [Leggi](it/CANDIDATE-STORAGE.md) |
 | User manual | [Read](../USER-MANUAL.md) | [Leggi](it/USER-MANUAL.md) |
 | Current projects and source import | [Read](SOURCE-REFACTORING.md) | [Leggi](it/SOURCE-REFACTORING.md) |
 | Project planning | [Read](PROJECT-PLANNING.md) | [Leggi](it/PROJECT-PLANNING.md) |

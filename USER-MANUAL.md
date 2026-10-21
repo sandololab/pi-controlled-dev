@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "User manual — version 0.1.0-beta.2"
+subtitle: "User manual — version 0.1.0-beta.4"
 lang: en-US
 toc-title: Contents
 ---
@@ -9,7 +9,7 @@ toc-title: Contents
 
 # What is pi-controlled-dev?
 
-pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.1.0-beta.2**, a development beta; some interruptions require operator intervention.
+pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.1.0-beta.4**, a development beta; some interruptions require operator intervention.
 
 All package interface text, generated explanations and role instructions use English. You may describe your objective in another language. Your words, source contents, exact evidence and historical records are preserved verbatim; they are not silently translated. English and Italian documentation both use the actual English menu labels.
 
@@ -226,6 +226,15 @@ pi list
 
 This follows the public repository's default branch. To pin a verified revision, append `@COMMIT_SHA` to the Git source, replacing the placeholder. A pinned commit does not advance on updates. Commands are documented for Pi 1.3.0; see [validation status](docs/VALIDATION.md).
 
+## Update a Git installation
+
+Close Pi normally, select the same profile used for installation, then run
+`pi update git:github.com/sandololab/pi-controlled-dev` and restart Pi. A local
+working copy and a Git-installed copy update independently. Pinned revisions do
+not advance automatically. Before resuming transferred work, install beta.4 or
+later on each computer when its evidence uses asynchronous host checks; shared
+candidate copies require beta.3 or later. See [current validation](docs/VALIDATION.md).
+
 ## Alternative tarball installation
 
 For a tarball in Downloads:
@@ -233,7 +242,7 @@ For a tarball in Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.2.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list
@@ -553,7 +562,7 @@ The advanced regeneration action or `/controlled-dev rebuild-view` reuses that c
 
 JSON state, identities, hashes, validation, review and confirmations remain authoritative. Markdown changes grant no authority. A task's **Design choices** section appears only when Developer recorded significant design rationale; it remains an explanation derived from records.
 
-Use linked `Notes` files for personal annotations. They are created once and never rewritten by regeneration. If projection fails, workflow state is unchanged and the view is marked stale. Obsidian CLI is optional; no Obsidian plugin, Pi launcher or JSON Canvas is included. Wikilinks already express task → scenario → run → evidence → review.
+Open **All personal notes** from Home to find every annotation and its related page. New `Notes` files link back to that page. Regeneration preserves personal edits byte for byte; an untouched default template from an earlier version may receive navigation links. The same index provides the parent link for edited older notes. Project technical memory is separate from saved plan, task status and history; its index also explains when no technical memories have been registered. If projection fails, workflow state is unchanged and the view is marked stale. Obsidian CLI is optional; no Obsidian plugin, Pi launcher or JSON Canvas is included. Wikilinks already express task → scenario → run → evidence → review.
 
 # Keep the project in its own folder
 
@@ -568,6 +577,8 @@ Transfer the complete project, including `.git`, `.controlled-dev` and `Document
 For unfinished transferred work, or work saved/released by normal closure even in the same folder, choose **Resume transferred project** or `/controlled-dev project resume-storage`. Without a task ID it lists verifiable saved tasks; an ID may also be supplied.
 
 When a Developer stops without changing files, closing Pi also preserves the verified starting copy. After a transfer the package recreates that copy and asks for a fresh confirmation. This applies to repeated transfers and tasks saved as READY. Previously used attempts remain counted, and original evidence retains its exact bytes and historical paths.
+
+If a checkpoint failed immediately after an accepted Developer result and verified candidate capture, resuming a released project restores that exact candidate for automated checks. It does not repeat the Developer. The accepted result, termination evidence, unchanged candidate and recorded interruption must all be verifiable; ordinary blocked tasks retain their existing recovery requirements.
 
 Fresh confirmation presents previous/current locations, preserved work and personal-note changes. It authorizes local restoration/control; old confirmations do not authorize the new execution. Required checks and decisions are reacquired. Unverifiable storage or uncertain old-agent termination leaves dependent work stopped.
 
@@ -594,7 +605,7 @@ Data belongs to the Pi profile's `controlled-dev` or an adopted project's `.cont
 
 The wizard does not accept arbitrary executables/arguments. Unsupported checks require review or future host support; missing required executables prevent task creation.
 
-Read-only protection inventories allow 100,000 entries with separate 512 MiB budgets for project files and Git data. Ignored files are included except host-recognized protected package storage. Source import allows 100,000 entries, 512 MiB total and 32 MiB per file. Storage adoption allows 100,000 entries and 1 GiB per acquired inventory, with 64 MiB per file. Exceeding limits stops the operation rather than weakening checks.
+Read-only protection inventories allow 100,000 entries with separate 512 MiB budgets for project files and Git data. Ignored files are included except host-recognized protected package storage. Source import allows 100,000 entries, 512 MiB total and 32 MiB per file. Storage adoption allows 100,000 entries and 1 GiB per acquired inventory, with 64 MiB per file. Project checkpoints apply the 1 GiB ceiling separately to each task’s retained candidate copies; the complete checkpoint still allows at most 100,000 entries. Exceeding limits stops the operation rather than weakening checks.
 
 Progress shows observed phases. Synchronous checks/copies may keep the last phase visible until host return; large inventories can take minutes. Historical native probes cover a simple model task, completion panel, local integration and storage adoption, not all repositories/environments. Session, displayed data and decisions remain host-controlled.
 
@@ -613,3 +624,24 @@ Questions explain why an answer is needed. Suggested answers are proposals you c
 ## Clarifications during execution
 
 An unresolved question in an approved task stops its dependent action. The TUI presents the exact question and lets you edit/review an answer before native confirmation. A suggestion is never accepted by cancellation. Confirmed answers remain in task decisions and reach Developer/Reviewer. They grant no implementation permission: approved scope, requirements and gates still apply. Changes to files or requirements require a revised task proposal; the host neither invents that revision nor continues autonomously.
+
+# Saved copies and disk space
+
+Choose **Reduce duplicate saved copies** after closing Pi normally and reopening the project, before resuming its task. The package checks existing snapshots and presents estimated savings for native confirmation. Alt+I requests a safe pause. Shared snapshots require version 0.1.0-beta.3 or later. See [smaller saved copies](docs/CANDIDATE-STORAGE.md) for transfer requirements and limits.
+
+# Saved results, checks and interruptions
+
+If a portable checkpoint fails after work was recorded, keep the working copy
+and use `/controlled-dev checkpoint` in the current session. This retries saving
+without starting an agent. If the session has ended, use the normal project
+resume path. Review preparation reports the failed data field before starting
+an agent when it can establish the problem in advance.
+
+Approved production checks now show elapsed execution while the interface stays
+available during the command. Complete output is retained up to 4 MiB; exceeding
+the limit or approved duration stops the check without recording success. Status
+separates recorded attempts from identified runs and confirmed no-starts.
+
+New asynchronous process evidence requires version **0.1.0-beta.4 or later**,
+including after transfer. See [reliability and recovery](docs/RELIABILITY-PLAN.md)
+for verification guarantees and remaining synchronous operations.

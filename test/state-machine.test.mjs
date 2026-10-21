@@ -457,23 +457,11 @@ test('P3-TEST-014 — import safety and untouched integration boundaries', () =>
   { encoding: 'utf8', timeout: 5000 });
   assert.ifError(result.error); assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, ''); assert.equal(result.stderr, '');
-  // Reviewed publication metadata plus unchanged state-machine integration boundaries.
+  // The pure reducer stays frozen; metadata and ScopeGuard have their own
+  // behavioral and distribution suites and may evolve independently.
   const excluded = {
-    // P14F.1 keeps the project-local production task input outside the Git candidate baseline.
-    '.gitignore': 'b7b3da7c14cb407cb938d857713e2819fe18f740b26738d01e76cdf81bbe546d',
-    // P17 pre-release metadata only; dependency graph unchanged.
-    'package-lock.json': 'b638c44ce6ebd9e6ff5f62173ff1ce4a16a2dee71a944f880e4e279734378b76',
     'tsconfig.json': '6828823d22b14122f1c6202e9116b5018d8898c4a2ea84a98f280f591563a598',
-    // P5 may implement RPC and P10 may implement orchestration; the AST checks above keep the state machine isolated.
-    // Reviewer redispatch is restricted to the existing BLOCKED gate transition.
     'src/state-machine.ts': '10dfff8cbd0d7a2891b242987ade85bd3564bc609d16c4c2d41586b88a51b5e2',
-    // Candidate Promotion adds the shared host Git policy and configured identity for new task rework.
-    // Source baseline permits ignored caches, but ignored project Pi controls are
-    // rejected on open/restore/capture; recovery/scope regressions verify this behavior.
-    // Candidate/scope invariants stay covered by ScopeGuard and promotion tests; state-machine bytes stay frozen.
-    'src/scope-guard.ts': '4713939a2506dba016900e71aec3186d502752105d00637124de2ca6129a7204',
-    // P14A may implement storage; test/store.test.mjs checks integrity and fail-closed limits.
-    // P6–P9 may implement controlled leaf profiles; P3 remains isolated.
   };
   for (const [path, hash] of Object.entries(excluded)) assert.equal(createHash('sha256').update(read(path)).digest('hex'), hash, path);
 });

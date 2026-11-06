@@ -2,7 +2,41 @@
 
 **English** · [Italiano](it/VALIDATION.md)
 
-This is a development beta. The failures recorded during the initial publication have been investigated and corrected. Historical campaign reports and current automated checks describe different revisions.
+This is a development beta. Historical campaign reports and current focused checks describe different revisions; earlier broad-suite failures remain explicitly recorded below.
+
+## Beta.5 release preparation — 6 November 2026
+
+Version **0.1.0-beta.5** prepares the previously merged implementation as a
+GitHub development prerelease. There were no public tags or releases at the
+preparation check; the preceding manifest was beta.4. Requirements and cases are
+in [RELEASE-BETA5](RELIABILITY-PLAN.md#release-beta5).
+
+The release delta changes README, current manual version labels, package/root
+lockfile versions and release documentation only. All runtime sources, extension,
+role instructions, skills, prompts and tests remain byte-identical to the merged
+implementation. No dependency or permission change is included.
+
+Executed for the release delta: TypeScript checking PASS; product-package and
+language suites **7/7 PASS**, no skips; `git diff --check` PASS; npm pack dry-run
+PASS with CHANGELOG.md included and no test directory, installed dependencies,
+profile, session or credentials in the listed distribution. Manifest and root
+lockfile versions agree; README/manuals identify beta.5. Native command syntax
+was checked against the installed Pi 1.5.0 documentation, and continuation/close
+conditions against the unchanged host implementation. No new Pi trial or full
+historical test campaign was run for this documentation/metadata increment.
+
+Previous behavioral evidence is reused: the final continuation/abandonment group
+passed 23 distinct cases, and a real Pi 1.5.0 workflow reopened the same saved
+session, recovered/resumed the same task without replaying Scout, produced its
+output through Developer, passed both host commands and Reviewer, and reached
+COMPLETED. These checks do not imply a clean full-suite beta.5 run, independent
+external acceptance or production qualification. Crash without a completed
+release, missing original session and uncertain child/host processes retain their
+conservative recovery limits. See the final native proof below.
+
+GitHub publication, tag and release creation remain pending at this checkpoint.
+The [changelog](../CHANGELOG.md) supplies generic public release notes; private
+trial logs, local paths and transcripts are not release assets.
 
 ## Pi 1.5 builtin read correction — 5 November 2026
 

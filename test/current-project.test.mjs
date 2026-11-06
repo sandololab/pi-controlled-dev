@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync} from 'node:fs';
+import {mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,renameSync,symlinkSync} from 'node:fs';
 import {join} from 'node:path';
-import {fixture,channel,git,inspect,api,ProposalBus,planningProposal} from './greenfield-bootstrap-fixture.mjs';
+import {fixture,channel,git,inspect,api,ProposalBus,planningProposal,DurableStore} from './greenfield-bootstrap-fixture.mjs';
 const {CurrentProject,discoverCurrentProject}=await import('../src/current-project.ts');
 const {ProjectPlanningRepository}=await import('../src/project-planning-repository.ts');
 const {default:extension}=await import('../extensions/controlled-dev.ts');
@@ -156,4 +156,78 @@ test('host wrapper profile reaches the current-project native design planner (re
  assert.match(task,/Preserve requirement source links/);assert.match(task,/Link design increments to caller requirements/);assert.match(task,/PACKAGE GUIDANCE/);
  assert.doesNotMatch(task,/Task only marker|Changed after wrapper creation/);assert.match(task,/Project Memory uses the existing native mechanism/);
  assert.equal(e.bus.run,1);assert.equal(git(f.repo,'status','--porcelain'),'');
+});
+
+
+// GIT-DELEGATE-1..3: real Git, host-owned authority; no model approval doubles.
+const setupAuthor={name:'Fixture',email:'fixture@example.invalid'};
+const setupMandate={operation:'initialize-local-git',reference:'test://explicit-host-mandate/local-git'};
+test('GD-A host delegation prepares exact local baseline after host reload without a human receipt',async t=>{
+ const f=setup(t,{identity:false}),identity={name:'Local Developer',email:'local@example.invalid'};
+ writeFileSync(join(f.repo,'app.py'),'print("delegated")\n');writeFileSync(join(f.repo,'.env'),'LOCAL_ONLY');
+ const project=new CurrentProject(f.repo,f.data,inspect),ref=project.delegateSetup(setupMandate,identity);
+ const ctx=channel();ctx.ui.confirm=async()=>assert.fail('Delegated setup must not ask for a personal confirmation');
+ const fresh=new CurrentProject(f.repo,f.data,inspect);assert.deepEqual(fresh.delegatedIdentity(),identity);
+ assert.equal(await fresh.prepare(ctx),true);assert.equal(git(f.repo,'ls-files'),'app.py');
+ assert.equal(git(f.repo,'show','HEAD:app.py'),'print("delegated")');assert.equal(readFileSync(join(f.repo,'.env'),'utf8'),'LOCAL_ONLY');
+ assert.equal(git(f.repo,'config','--local','user.name'),identity.name);
+ assert.throws(()=>git(f.repo,'config','--global','--get','user.name'));
+ const store=apiStore(f),result=JSON.parse(store.read(store.readProjectIndex())),intent=JSON.parse(store.read(result.intent));
+ assert.deepEqual(intent.approval,{kind:'HostDelegatedAuthorization',delegation:ref});
+ const saved=JSON.parse(store.read(ref));assert.equal(saved.mandate.reference,setupMandate.reference);assert.equal(saved.root,f.repo);
+ const {consumeTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
+ assert.throws(()=>consumeTrustedConfirmation(saved,()=>saved,store),/TRUSTED_CONFIRMATION/);
+ const head=git(f.repo,'rev-parse','HEAD');assert.equal(await fresh.prepare(ctx),true);assert.equal(git(f.repo,'rev-parse','HEAD'),head);
+});
+function apiStore(f){return DurableStore.project(f.data,f.repo,'workspace',inspect)}
+test('GD-B absent delegation keeps the personal confirmation and performs no Git write when declined',async t=>{
+ const f=setup(t),ctx=channel(false);let asked=0;ctx.ui.confirm=async()=>{asked++;return false};
+ assert.equal(await new CurrentProject(f.repo,f.data,inspect).prepare(ctx),false);assert.equal(asked,1);assert.equal(existsSync(join(f.repo,'.git')),false);
+});
+for(const change of ['source','directory','identity','operation','extra-field','missing-author','malformed-author','other-project'])test(`GD-B delegation rejects ${change} without Git writes`,async t=>{
+ const f=setup(t);writeFileSync(join(f.repo,'app.py'),'before');const p=new CurrentProject(f.repo,f.data,inspect);p.delegateSetup(setupMandate,setupAuthor);
+ let target=f.repo,identity;
+ if(change==='source')writeFileSync(join(f.repo,'app.py'),'after');
+ if(change==='directory'){renameSync(f.repo,join(f.root,'old-repo'));mkdirSync(f.repo);writeFileSync(join(f.repo,'app.py'),'before')}
+ if(change==='identity')identity={name:'Different Author',email:'different@example.invalid'};
+ if(['operation','extra-field','missing-author','malformed-author','other-project'].includes(change)){
+  const source=apiStore(f),ref=source.readProjectIndex(),value=JSON.parse(source.read(ref));
+  if(change==='operation')value.mandate.operation='approve-plan';
+  if(change==='extra-field')value.allowAllGates=true;
+  if(change==='missing-author')delete value.identity;
+  if(change==='malformed-author')value.identity.email='not an email';
+  if(change==='other-project'){target=join(f.root,'other');mkdirSync(target);writeFileSync(join(target,'app.py'),'before')}
+  const dest=DurableStore.project(f.data,target,'workspace',inspect,true);const next=dest.put('copied-delegation',api.canonicalize(value));dest.replaceProjectIndex(target===f.repo?ref:undefined,next);
+ }
+ const ctx=channel();ctx.ui.confirm=async()=>assert.fail('Invalid delegation must fail closed, not request a substitute approval');
+ await assert.rejects(new CurrentProject(target,f.data,inspect).prepare(ctx,identity),/CURRENT_PROJECT_DELEGATION/);assert.equal(existsSync(join(target,'.git')),false);
+});
+test('GD-B issuer rejects a different operation, nested profile and linked source before granting authority',async t=>{
+ const f=setup(t),p=new CurrentProject(f.repo,f.data,inspect);
+ assert.throws(()=>p.delegateSetup({...setupMandate,operation:'approve-plan'},setupAuthor),/CURRENT_PROJECT_DELEGATION_INVALID/);
+ mkdirSync(join(f.repo,'profile'));assert.throws(()=>new CurrentProject(f.repo,join(f.repo,'profile'),inspect),/CURRENT_PROJECT_DIRECTORY_INVALID/);
+ writeFileSync(join(f.root,'outside'),'external');symlinkSync(join(f.root,'outside'),join(f.repo,'linked'));
+ assert.throws(()=>p.delegateSetup(setupMandate,setupAuthor),/SOURCE_IMPORT/);assert.equal(existsSync(join(f.repo,'.git')),false);
+ assert.equal(apiStore(f)?.readProjectIndex(),undefined);
+});
+test('GD-C local Git delegation does not approve the plan or autonomy policy',async t=>{
+ const f=setup(t);new CurrentProject(f.repo,f.data,inspect).delegateSetup(setupMandate,setupAuthor);
+ const ctx={...channel(),cwd:f.repo};let confirmations=0;
+ ctx.ui.confirm=async(title,body)=>{confirmations++;assert.doesNotMatch(title,/Prepare the project/);assert.match(body,/ProjectPlan/);return false};
+ ctx.ui.editor=async()=> 'Produce the requested local file';
+ const actions=['Approve the plan','Supervised mode','Back'];
+ ctx.ui.select=async(_title,choices)=>{const action=actions.shift();assert.ok(choices.includes(action),`${action}: ${choices}`);return action};
+ const e=entry(t,f,ctx);await e.run('');
+ assert.equal(e.notices.filter(n=>n.type==='error').length,0,JSON.stringify(e.notices));assert.equal(confirmations,1);
+ const planning=ProjectPlanningRepository.open(f.data,f.repo,inspect);assert.equal(planning.current(),undefined);assert.equal(planning.links().length,0);
+ assert.equal(e.bus.requests.filter(r=>r.method==='spawn').length,1,'Only planning Scout; no Developer authorized');
+});
+
+test('GD-B delegation requires an explicit author and cannot drift with global Git configuration',async t=>{
+ const f=setup(t),p=new CurrentProject(f.repo,f.data,inspect);
+ assert.throws(()=>p.delegateSetup(setupMandate),/CURRENT_PROJECT_DELEGATION_INVALID/);
+ p.delegateSetup(setupMandate,setupAuthor);writeFileSync(join(f.home,'.gitconfig'),'[user]\nname = Changed\nemail = changed@example.invalid\n[author]\nname = Foreign Author\nemail = author@example.invalid\n[committer]\nname = Foreign Committer\nemail = committer@example.invalid\n');
+ const ctx=channel();ctx.ui.confirm=async()=>assert.fail('No new confirmation for the same explicit identity');
+ await new CurrentProject(f.repo,f.data,inspect).prepare(ctx);
+ assert.equal(git(f.repo,'show','-s','--format=%an|%ae|%cn|%ce','HEAD'),`${setupAuthor.name}|${setupAuthor.email}|${setupAuthor.name}|${setupAuthor.email}`);
 });

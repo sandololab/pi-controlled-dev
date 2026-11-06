@@ -129,7 +129,7 @@ test('project-level fixture persists canonical exact evidence and verifies in a 
 test('fixture host command is explicit, rejects headless and parent/agent mutation tools remain blocked',async()=>{
   let tools=['read','write','edit','bash','subagent'];const events=new Map(),commands=new Map();
   probe({on(name,fn){events.set(name,fn)},registerCommand(name,command){commands.set(name,command)},
-    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],getActiveTools:()=>tools,setActiveTools:names=>{tools=names}});
+    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],getActiveTools:()=>tools,setActiveTools:names=>{tools=names}});
   const ctx=context();ctx.mode='rpc';await events.get('session_start')({},ctx);assert.deepEqual(tools,['read']);
   await assert.rejects(()=>commands.get('project-confirmation-fixture').handler('',ctx),/HUMAN_CHANNEL_UNAVAILABLE/);
   for(const toolName of ['write','edit','bash','subagent','createTrustedConfirmationRequest','consumeTrustedConfirmation'])assert.equal(events.get('tool_call')({toolName}).block,true);

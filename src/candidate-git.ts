@@ -79,7 +79,8 @@ export class CandidateGit {
   bootstrapBind(commit:string):void {this.#run(this.repo,['update-ref',this.target(),oid(commit),'0'.repeat(commit.length)]);this.#run(this.repo,['read-tree',commit])}
   /** Import an exact host-observed source snapshot as the first, non-empty commit.
    * Hash raw bytes without attributes/filters; ignore rules cannot hide imported files. */
-  importSourceBaseline(manifest:CandidateManifest,verify?:()=>void):string {
+  importSourceBaseline(manifest:CandidateManifest,verify?:()=>void,identity?:GitIdentity):string {
+    if(identity)validateGitIdentity(identity);
     this.identity();this.assertNoOperation();
     let exists=false;try{this.head();exists=true}catch{}if(exists||this.#run(this.repo,['ls-files','-z']))fail('SOURCE_IMPORT_BASELINE_EXISTS');
     const unchanged=verify??(()=>{if(hashCanonical(workspaceManifest(this.repo,manifest.baseCommit))!==hashCanonical(manifest))fail('SOURCE_IMPORT_CHANGED')});unchanged();
@@ -98,7 +99,7 @@ export class CandidateGit {
     if(index.length)this.#run(this.repo,['update-index','-z','--index-info'],index.join(''));
     const tree=oid(this.#run(this.repo,['write-tree']));
     unchanged();
-    const commit=oid(this.#run(this.repo,['commit-tree',tree,'-m','chore: import existing source baseline']));
+    const commit=oid(this.#run(this.repo,['commit-tree',tree,'-m','chore: import existing source baseline'],undefined,identity?{GIT_AUTHOR_NAME:identity.name,GIT_AUTHOR_EMAIL:identity.email,GIT_COMMITTER_NAME:identity.name,GIT_COMMITTER_EMAIL:identity.email}:{}));
     this.bootstrapBind(commit);this.assertTarget(this.target(),commit);return commit;
   }
   assertBootstrapReflogs(branch:string,commit:string):void {

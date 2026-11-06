@@ -27,7 +27,7 @@ function setup(t,options={}){
 }
 function command(ctx){const handlers=new Map(),commands=new Map();let rpc=0,active=[];
   extension({events:{on(){return()=>{}},emit(){rpc++}},registerCommand(name,value){commands.set(name,value)},
-    on(name,fn){handlers.set(name,[...(handlers.get(name)??[]),fn]);return()=>{}},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(value){active=value}});
+    on(name,fn){handlers.set(name,[...(handlers.get(name)??[]),fn]);return()=>{}},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(value){active=value}});
   for(const fn of handlers.get('session_start'))fn({},ctx);
   return {run:(text)=>commands.get('controlled-dev').handler(text,ctx),rpc:()=>rpc,active:()=>active};
 }

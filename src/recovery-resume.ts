@@ -1,4 +1,5 @@
 import { inspectHostCommandRecovery } from './host-command-recovery.js';
+import { acquireLocalContinuation } from './local-continuation.js';
 import { scoutClarificationCoverage } from './scout-clarifications.js';
 import { projectRuntimeImportLease } from './project-runtime-import.js';
 import type { ProjectRuntimeImportCapability } from './project-runtime-import.js';
@@ -367,6 +368,16 @@ export function takeOverWorkflow(dataRoot:string,storeRoot:string,sessionId:stri
   const action=classifyResumeAction(dataRoot,storeRoot).action;
   if(['NO_ACTION_TERMINAL','P16C_REPAIR_REQUIRED','CHILD_RECONCILIATION_REQUIRED'].includes(action))throw new Error(action);
   const incarnation=currentProcessIncarnation();if(!incarnation)throw new Error('OWNER_INCARNATION_UNAVAILABLE');
+  const local=acquireLocalContinuation(dataRoot,storeRoot,sessionId,inspect);
+  if(local){
+    const spec=local.ledger.records.find(r=>r.kind==='TaskSpec'&&r.id===local.ledger.state.spec.id);
+    if(!spec||spec.kind!=='TaskSpec')throw new Error('TAKEOVER_SPEC_MISSING');
+    const authority=Object.freeze({taskId:local.ledger.state.taskId,recoveryRecordId:local.recordRef.id,
+      processIncarnation:incarnation,classification:'VERIFIED_LOCAL_ORDERLY_RELEASE',takeoverToken:local.locks.workspace.record.token,
+      acquiredAt:new Date().toISOString(),sessionId,recordRef:local.recordRef});
+    authorities.set(authority,{store:local.store,ledger:local.ledger,spec:spec.value,manager:local.manager,locks:local.locks,claimed:false,reconciliations:[]});
+    return authority;
+  }
   const ledger=DurableStore.load(storeRoot),s=ledger.state;
   const reclaimed=recoverLocks(dataRoot,storeRoot),lockRoot=join(dataRoot,'controlled-dev','locks');
   if(reclaimed.recovery.classification==='INTERRUPTED_WITH_UNKNOWN_CHILD'&&reclaimed.recovery.lockOwnerStatus==='DEAD'&&s.runs.every(runQuiescent)&&['IMPLEMENTING','TESTING','REVIEWING','REWORK'].includes(s.state))throw new Error('HOST_VERIFICATION_TERMINATION_UNPROVEN');

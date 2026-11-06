@@ -109,6 +109,34 @@ export class LockManager{
     // Reverse acquisition order. A failed task release leaves workspace held fail-closed.
     this.release(locks.task);this.release(locks.workspace);
   }
+  /** One guard covers retirement, exact pair removal and durable release publication. */
+  releaseContinuation<T>(locks:WorkflowLocks,action:(release:()=>void)=>T):T{
+    return withLockMutation(this.root,locks.workspace.record.workspaceHash,retain=>{
+      if(!this.verifyTaskLock(locks.task)||!this.verifyWorkspaceLock(locks.workspace))throw new LockError('LOCK_OWNERSHIP_LOST');
+      let released=false;
+      try{return action(()=>{
+        if(released||!this.verifyTaskLock(locks.task)||!this.verifyWorkspaceLock(locks.workspace))throw new LockError('LOCK_OWNERSHIP_LOST');
+        this.fault?.('beforeRelease');
+        for(const handle of [locks.task,locks.workspace]){
+          unlinkSync(handle.path);syncDirectory(dirname(handle.path));active.delete(handle);inspectLive.delete(handle.record.token);
+        }
+        released=true;
+      })}catch(error){retain();throw error}
+    });
+  }
+  /** Validate and consume under the same guard; partial acquisition retains protection. */
+  acquireContinuation<T>(taskId:string,workspaceRoot:string,validate:()=>void,consume:(locks:WorkflowLocks)=>T):{locks:WorkflowLocks;value:T}{
+    const {workspaceHash}=this.workspaceIdentity(workspaceRoot);
+    return withLockMutation(this.root,workspaceHash,retain=>{
+      validate();let started=false;
+      try{
+        started=true;
+        const workspace=this.#acquire('WORKSPACE',join(this.root,'workspaces',`${workspaceHash}.lock`),workspaceHash);
+        const task=this.#acquire('TASK',join(this.root,'tasks',`${hash(`${workspaceHash}\0${taskId}`)}.lock`),workspaceHash,taskId);
+        const locks=Object.freeze({workspace,task});return {locks,value:consume(locks)};
+      }catch(error){if(started)retain();throw error}
+    });
+  }
   #acquire(kind:LockKind,path:string,workspaceHash:string,taskId?:string):LockHandle{
     const processIncarnation=currentProcessIncarnation();
     const record:LockRecord=Object.freeze({schemaVersion:2,...(processIncarnation?{processIncarnation}:{}),kind,...(taskId?{taskId}:{}),workspaceHash,ownerSessionId:this.ownerSessionId,

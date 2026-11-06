@@ -23,7 +23,7 @@ export interface MemoryContextReceipt {readonly schemaVersion:1;readonly project
   readonly records:readonly {readonly recordId:string;readonly revision:number;readonly digest:string;readonly reason:string}[];
   readonly contextRef:ArtifactRef;readonly contextDigest:string;readonly totalBytes:number;readonly totalCharacters:number;readonly timestamp:string}
 export interface PreparedMemoryContext {readonly selection:MemorySelection;readonly contextRef:ArtifactRef}
-export interface MemoryRunOptions {readonly projectMemory?:PreparedMemoryContext}
+export interface MemoryRunOptions {readonly projectMemory?:PreparedMemoryContext;readonly sourceIndexStore?:Pick<DurableStore,'root'|'put'>}
 const selections=new WeakSet<object>();
 const prepared=new WeakMap<object,{store:Pick<DurableStore,'put'|'read'>;onReceipt?:(ref:ArtifactRef,receipt:MemoryContextReceipt)=>void}>();
 const relevantLesson=(entry:MemoryEntry,query:MemoryQuery)=>{

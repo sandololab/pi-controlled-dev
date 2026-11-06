@@ -246,9 +246,8 @@ for(const [label,mutation] of [
   finally{runner.dispose();registration.dispose();cleanup(ws,host)}
 });
 
-function parentRuntime(){
+function parentRuntime(tools=[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}]){
   const bus=new Bus();let active=['read','write','edit','bash','subagents_enable'];
-  const tools=[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}];
   isolateParentTools({on:(name,handler)=>bus.on(name,handler),getAllTools:()=>tools,setActiveTools:names=>{active=names}});
   bus.emit('session_start',{});
   return {bus,tools,get active(){return active},reactivate(names){active=names},call(name,execute){
@@ -257,6 +256,42 @@ function parentRuntime(){
     return execute();
   }};
 }
+
+await test('READ-150-A — canonical Pi 1.5 builtin read remains callable after session and turn restrictions',()=>{
+  const parent=parentRuntime();let calls=0;
+  for(const event of ['session_start','before_agent_start']){
+    parent.reactivate(['read','write','edit','bash','unknown_late_tool']);
+    parent.bus.emit(event,{});
+    assert.deepEqual(parent.active,['read']);
+    assert.equal(parent.call('read',()=>++calls),calls);
+    for(const name of ['write','edit','bash','unknown_late_tool']){
+      parent.reactivate(['read',name]);
+      assert.equal(parent.call(name,()=>{throw new Error('Forbidden tool executed')}),'BLOCKED');
+    }
+  }
+  assert.equal(calls,2);
+});
+
+for(const [label,tool] of [
+  ['no read tool',undefined],
+  ['missing metadata',{name:'read'}],
+  ['empty metadata',{name:'read',sourceInfo:{}}],
+  ['missing origin',{name:'read',sourceInfo:{path:'builtin:read'}}],
+  ['missing path',{name:'read',sourceInfo:{source:'builtin'}}],
+  ['extension with canonical path',{name:'read',sourceInfo:{source:'extension',path:'builtin:read'}}],
+  ['SDK namesake',{name:'read',sourceInfo:{source:'sdk',path:'builtin:read'}}],
+  ['legacy bracketed path',{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],
+  ['another builtin path',{name:'read',sourceInfo:{source:'builtin',path:'builtin:write'}}],
+  ['another tool name',{name:'write',sourceInfo:{source:'builtin',path:'builtin:read'}}],
+])await test(`READ-150-B — ${label} cannot grant read even after reactivation`,()=>{
+  const parent=parentRuntime(tool?[tool]:[]);let calls=0;
+  for(const event of ['session_start','before_agent_start']){
+    parent.bus.emit(event,{});assert.deepEqual(parent.active,[]);
+    parent.reactivate(['read','write','edit','bash']);
+    for(const name of parent.active)assert.equal(parent.call(name,()=>calls++),'BLOCKED');
+  }
+  assert.equal(calls,0);
+});
 
 for(const role of ['Scout','Developer','Reviewer','Oracle'])await test(`P12.1 — ${role} notification cannot grant parent original or candidate mutation`,()=>{
   const ws=workspace(),parent=parentRuntime(),before=inventoryHash(inventoryTree(ws.repo)),candidate=inventoryHash(inventoryTree(ws.work));

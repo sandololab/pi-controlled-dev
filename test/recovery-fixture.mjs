@@ -168,7 +168,7 @@ export async function restartFixture(root,checkpoint='READY',resume=false,dispos
     const ctx={mode:'tui',cwd:repo,sessionManager:{getSessionId:()=>owner},ui:{notify(message,type){notifications.push(message);if(type==='error')errors.push(message)},async confirm(){return true}}};
     extension({events:{...runtime.events,emit(name,r){if(name==='pi-subagents:runtime-agent-register:v1')r.result={ok:true,registration:{dispose(){}}};else runtime.events.emit(name,r)}},
       on(name,fn){handlers.set(name,[...(handlers.get(name)??[]),fn]);return()=>{}},registerCommand(name,cmd){commands.set(name,cmd)},
-      getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(){}});
+      getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(){}});
     for(const fn of handlers.get('session_start'))fn({},ctx);
     const status=productionRecoveryStatus(ctx);
     let resumeDenied;

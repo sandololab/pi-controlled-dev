@@ -31,7 +31,7 @@ if(mode==='crash-owner'){
   const ctx={mode:'tui',cwd:repo,sessionManager:{getSessionId:()=> 'repair-successor'},ui:{notify(m){notifications.push(m)},async confirm(){confirmations++;return true}}};
   extension({events:{on(){return()=>{}},emit(name,r){if(name==='pi-subagents:runtime-agent-register:v1')r.result={ok:true,registration:{dispose(){}}};else rpcCalls++}},
     on(n,fn){handlers.set(n,[...(handlers.get(n)??[]),fn]);return()=>{}},registerCommand(n,v){commands.set(n,v)},
-    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(){}});
+    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(){}});
   for(const fn of handlers.get('session_start'))fn({},ctx);
   let denied;try{await commands.get('controlled-dev').handler(point??'repair',ctx)}catch(e){denied=e.message}
   await commands.get('controlled-dev').handler('status --technical',ctx);

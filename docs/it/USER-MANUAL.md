@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "Manuale utente — versione 0.1.0-beta.4"
+subtitle: "Manuale utente — versione 0.1.0-beta.5"
 lang: it-IT
 toc-title: Indice
 ---
@@ -14,7 +14,7 @@ La TUI e i prompt inclusi sono in inglese; i nomi dei pulsanti riportati qui cor
 
 pi-controlled-dev è un package per Pi Coding Agent. Ti permette di affidare un lavoro di sviluppo a ruoli distinti, con confini espliciti, verifiche del risultato e conferme richieste a te.
 
-Questo manuale descrive la versione **0.1.0-beta.4**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
+Questo manuale descrive la versione **0.1.0-beta.5**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
 
 # Stato effettivo di questa beta
 
@@ -325,7 +325,7 @@ Supponendo che il file ricevuto sia nella directory Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.5.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list

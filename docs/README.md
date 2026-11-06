@@ -59,3 +59,10 @@ service or database is introduced.
 
 
 Authorized operator semantics: [CONFIRMATION-OPERATOR](RELIABILITY-PLAN.md#confirmation-operator).
+
+
+## Development prerelease beta.5
+
+[RELEASE-BETA5 requirements, plan and checks](RELIABILITY-PLAN.md#release-beta5)
+cover documentation, version metadata and release publication without runtime
+changes. [Validation](VALIDATION.md#beta5-release-preparation--6-november-2026) records actual results separately; [release notes](../CHANGELOG.md) describe changes and limits.

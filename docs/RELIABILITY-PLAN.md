@@ -463,7 +463,7 @@ Implementation order: local checkpoint/release, exact single-consumer acquisitio
 Traceability: LC-1 -> shutdown/checkpoint/recovery -> same-owner resume test and real TUI. LC-2 -> exact pair/guard/consume -> concurrency, stale token/head and replay tests. LC-3 -> quiescence/full durable record -> live/unknown/partial-release failures. Results are pending; no test is claimed passed here.
 
 
-LC-1/2/3 implemented and focused checks passed. Actual same-session/same-task recovery dispatched one Developer without replaying the accepted Scout; both frozen package checks passed. Full task completion remains blocked by a distinct prepared criterion/command mismatch and the existing post-result abandonment restriction. See [executed results and limits](VALIDATION.md#local-orderly-continuation--6-november-2026). Crash recovery without a completed orderly release and the original missing-session task remain outside this handoff.
+LC-1/2/3 implemented and focused checks passed. Actual same-session/same-task recovery dispatched one Developer without replaying the accepted Scout; both frozen package checks passed. Full task completion remains blocked by a distinct prepared criterion/command mismatch and the existing post-result abandonment restriction. See [executed results and limits](VALIDATION.md#local-orderly-continuation-and-post-result-abandonment--6-november-2026). Crash recovery without a completed orderly release and the original missing-session task remain outside this handoff.
 
 
 ## POST-RESULT-ABANDON — authorized 6 November 2026
@@ -471,4 +471,47 @@ LC-1/2/3 implemented and focused checks passed. Actual same-session/same-task re
 Origin SAN-106 comment 180f27a0. PRA-1: explicitly abandon a recovered BLOCKED attempt with candidate/results as FAILED, preserving TaskSpec, results, candidate and counters; no integration or result approval. PRA-2: retain verified recovery authority, current revision/session, candidate verification and child/host-command quiescence before and after the native confirmation; release locks only after the durable terminal state. Minimal change: remove the bridge's obsolete no-result restriction and add the existing candidate-current check at both sides of abandonRecovered confirmation. Tests: successful post-result abandonment preserves evidence and releases locks; uncertain child/host journal or mutated candidate denies without release. Native proof then closes only the isolated failed attempt and reuses the same folder for a CONTENT-consistent saved-session workflow. No new service, policy, permissions or runtime approval tier. Results pending.
 
 
-PRA-1/2 executed: typecheck and 2/2 new confined cases pass; native post-result closure preserved all work as FAILED. The subsequent same-folder, saved-session task completed as r42 after exact-ID reopen and recover/resume with a single Scout, Developer output, two passing commands and Reviewer PASS. See the final [validation results](VALIDATION.md#post-result-native-abandonment-and-final-saved-session-proof--6-november-2026). The latest successful proof supersedes earlier pending/blocked statuses without removing their history.
+PRA-1/2 executed: typecheck and 2/2 new confined cases pass; native post-result closure preserved all work as FAILED. The subsequent same-folder, saved-session task completed as r42 after exact-ID reopen and recover/resume with a single Scout, Developer output, two passing commands and Reviewer PASS. See the final [validation results](VALIDATION.md#local-orderly-continuation-and-post-result-abandonment--6-november-2026). The latest successful proof supersedes earlier pending/blocked statuses without removing their history.
+
+
+## RELEASE-BETA5
+
+Scope: publish the already merged implementation as development prerelease
+0.1.0-beta.5 and document its verified operating procedure. No runtime, dependency,
+permission or persisted-format change. The previous manifest is beta.4; public
+tags and releases were absent at planning time.
+
+REL5-1: README explains project-local installation, initial Pi session persistence,
+orderly shutdown, explicit same-ID reopen and separate recover/resume operations.
+REL5-2: README explains native post-result abandonment and conservative refusal
+for uncertain children, changed candidates and incomplete releases after crashes.
+REL5-3: manifest, lockfile, current manual versions and published release metadata
+agree on beta.5; historical verification versions retain their original meaning.
+REL5-4: release notes identify included changes, actual checks and limits without
+private trial data, local paths, credentials or transcripts.
+
+Design and allocation: README and current manual version labels satisfy REL5-1/2;
+package.json and the root lockfile fields satisfy REL5-3. CHANGELOG.md supplies
+release notes for REL5-4 and is included in the existing package file list.
+Documentation index links this plan and the observed validation report. Existing
+interfaces and storage require no additional design or database document.
+
+Sequence: verify remote base and conventions; prepare documentation/metadata;
+check versions, local links, package inventory and relevant product/language
+regressions plus typecheck. Preserve all runtime source/test bytes from the
+merged implementation; reuse its previous behavioral and native Pi evidence.
+Then publish on a dedicated branch, inspect PR and checks, merge with exact head,
+and create the prerelease on the final merged commit through authorized supported
+operations. Unsupported connector operations must be reported rather than
+substituted with guessed tool names or an alternative writing channel.
+
+| Requirement | Implementation | Planned verification | Result |
+|---|---|---|---|
+| REL5-1 | [README](../README.md) | Verify command syntax against installed Pi 1.5.0 and existing continuation guards | [Executed release checks](VALIDATION.md#beta5-release-preparation--6-november-2026) |
+| REL5-2 | [README](../README.md) | Compare documented close/recovery conditions with host implementation | [Executed release checks](VALIDATION.md#beta5-release-preparation--6-november-2026) |
+| REL5-3 | [manifest](../package.json), [lockfile](../package-lock.json), current manuals | Product package regressions and version equality | [Executed release checks](VALIDATION.md#beta5-release-preparation--6-november-2026) |
+| REL5-4 | [changelog](../CHANGELOG.md), [validation](VALIDATION.md) | Package inventory, local links, generic public text review, source-byte identity | [Executed release checks](VALIDATION.md#beta5-release-preparation--6-november-2026) |
+
+See the [documentation index](README.md). Observed checks are recorded in
+[validation](VALIDATION.md#beta5-release-preparation--6-november-2026). GitHub publication and release
+creation remain unexecuted at this planning checkpoint.

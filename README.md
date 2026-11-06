@@ -1,10 +1,10 @@
 # pi-controlled-dev
 
-**0.1.0-beta.4** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit human confirmations.
+**0.1.0-beta.5** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit confirmations by an authorized operator.
 
 Describe the software result you want. Review the proposed plan, choose supervised execution or approve bounded autonomy, and follow each task through implementation, verification and integration.
 
-**Development beta:** the beta.4 portable suite passed a complete verification run on 21 October 2026. Read the [validation status](docs/VALIDATION.md) for coverage, optional checks and remaining limits. Historical successful runs do not certify every current feature or platform.
+**Development prerelease:** beta.5 includes Pi 1.5 builtin-read compatibility, delegated local Git preparation, progressive source discovery and orderly continuation of a saved Pi session. A real same-session task completed through Scout, Developer, checks and Reviewer. This is focused evidence, not a new clean full-suite run or production qualification. Read the [release notes](CHANGELOG.md) and [validation status](docs/VALIDATION.md) for exact coverage and remaining limits.
 
 The interface and agent guidance are in English. Documentation is available in [English](docs/README.md) and [Italiano](docs/it/README.md). See the complete [user manual](USER-MANUAL.md) / [manuale italiano](docs/it/USER-MANUAL.md).
 
@@ -20,16 +20,19 @@ pi-controlled-dev does not bundle or import pi-subagents. Compatibility is deter
 
 ## Install from GitHub
 
-Use a dedicated Pi profile. Loading this extension restricts the parent model to read-only tools for the whole session, including after a task finishes.
+Use a dedicated Pi profile and install the packages locally from the project folder. Loading this extension restricts the parent model to read-only tools for the whole session, including after a task finishes. The Developer works through the controlled workflow; the parent does not write the implementation.
 
 ```sh
 export PI_CODING_AGENT_DIR="$HOME/.pi-controlled-dev"
-pi install git:github.com/sandololab/pi-controlled-dev
-pi install npm:pi-subagents
+cd /path/to/project
+pi install git:github.com/sandololab/pi-controlled-dev -l
+pi install npm:pi-subagents -l
 pi list
 ```
 
-These commands follow Pi 1.3.0's [package documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md). Configure your provider and model in this dedicated profile; credentials from another profile are not copied automatically.
+These commands follow Pi 1.5.0's [package documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md). Configure your provider and model in this dedicated profile; credentials from another profile are not copied automatically.
+
+The `-l` flag records packages in the project’s `.pi/settings.json`; keep the dedicated profile and credentials outside project sources. Include this non-secret configuration in the clean Git baseline before creating a task, and keep credentials outside the repository. Do not change it underneath an active task.
 
 The Git installation follows the repository's default branch. To pin a verified revision, append `@COMMIT_SHA` to the Git source, replacing the placeholder with the desired commit. A pinned revision does not advance with later updates.
 
@@ -41,8 +44,9 @@ pi update git:github.com/sandololab/pi-controlled-dev
 ```
 
 Restart Pi afterward. Local development edits do not update GitHub or an installed
-Git copy automatically. Update to beta.4 before reopening a project containing
-new asynchronous process evidence; shared saved copies require beta.3 or later.
+Git copy automatically. Use beta.5 on the installation that creates and resumes an orderly local
+continuation. Older asynchronous process evidence requires beta.4 or later;
+shared saved copies require beta.3 or later.
 See [smaller saved copies](docs/CANDIDATE-STORAGE.md) and the
 [reliability plan](docs/RELIABILITY-PLAN.md) for the changes since beta.2.
 
@@ -51,8 +55,8 @@ For an offline alternative, build a tarball with `npm pack --pack-destination "$
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz"
-pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.5.tgz"
+pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev" -l
 ```
 
 Install pi-subagents separately in this case too. Keep the package, its installation prefix and the Pi profile outside the project being developed.
@@ -75,9 +79,9 @@ Then open:
 
 The package recognizes the current project and reopens its saved objective, plan and status. Inside a Git subfolder, it opens the repository root. A folder containing one nested repository opens that repository; with multiple repositories, enter the intended project first.
 
-If Git is missing, review the proposed local baseline, file exclusions and commit identity. Existing files keep their location and content. Choose **Start from existing code** only when you want a separate import into a new folder. Existing source code does not imply a refactoring objective: ask for the actual feature, fix or continuation you need.
+If Git is missing, review the proposed local baseline, file exclusions and commit identity. A trusted host can explicitly delegate only this local preparation for the exact project and identity; absent a valid delegation the ordinary confirmation remains required. This grants no remote Git authority. Existing files keep their location and content. Choose **Start from existing code** only when you want a separate import into a new folder. Existing source code does not imply a refactoring objective: ask for the actual feature, fix or continuation you need.
 
-After opening a project, natural-language requests are handled through the package's dialogs. You can also use `/controlled-dev request <description>`. The parent model does not implement changes directly.
+After opening a project, natural-language requests are handled through the package's dialogs. You can also use `/controlled-dev request <description>`. The parent model does not implement changes directly. Large source inventories use a compact initial map and linked, bounded pages; partial views are explicitly marked and the complete eligible catalog remains reachable through read access.
 
 ## Plan and execute
 
@@ -125,7 +129,7 @@ Start a prepared task with `/controlled-dev run`. Read each native confirmation.
 /controlled-dev decide ANSWER Your clarification
 ```
 
-These commands still require explicit TUI confirmation. Model messages, agent outputs and edited files cannot replace it. Confirmations bind the exact subject, payload, presentation and current session and are consumed once.
+These commands still require explicit TUI confirmation by an operator authorized for the decision. The terminal channel does not identify a named human or detect physical human presence; attribute decisions to the actual operator, including an agent acting under an explicit external mandate. Model messages, agent outputs and edited files cannot replace it. Confirmations bind the exact subject, payload, presentation and current session and are consumed once.
 
 ```text
 /controlled-dev status
@@ -156,24 +160,97 @@ The host supplies bounded, relevant memory and records exactly which revisions a
 
 Use **Keep the project in its folder** to move existing project documents and state into the project through the verified host path. For transfer or a cleanly closed saved project, use **Resume transferred project** or `/controlled-dev project resume-storage`. Include `.git`, `.controlled-dev` and the existing `Documentazione` folder when transferring. The historical folder name is retained for compatibility; its generated explanations are in English. Credentials and live process permissions are not transferred. Do not rewrite absolute paths inside signed or hashed historical evidence.
 
-## Recover after interruption
+## Save, close and reopen the same Pi session
 
-Read `/controlled-dev status` first. Recovery, reconciliation, repair and resume are distinct operations:
+Pi conversation persistence and workflow recovery are separate. In Pi 1.5.0, a
+new session may have an ID in memory without a saved session file: slash commands
+alone do not guarantee the initial JSONL write. Before creating work that must
+survive a restart, make one ordinary, harmless user/assistant exchange and use
+`/session` to record the exact ID and verify the session file exists. Keep the
+same dedicated profile and session storage. Never manufacture a session file.
+
+Before leaving, inspect `/controlled-dev status` and wait for a resumable pause
+with all children and host commands proven quiescent. Then exit Pi normally:
 
 ```text
-/controlled-dev recover
-/controlled-dev reconcile
-/controlled-dev repair
-/controlled-dev resume
+/quit
 ```
 
-Use only the path allowed by the saved state. Recovery requires verifiable ownership and process termination; a missing lock or reassuring agent message is insufficient. Repair verifies and synchronizes the existing journal in the new process. It does not invent missing effects, results or approvals. Resume requests any fresh local confirmations needed before further work.
+A qualifying local workflow records an exact, durable release during orderly
+shutdown. Its previous authority is retired; a completed release can be consumed
+by only one successor. A successful Pi exit alone is not proof that release was
+possible. Preserve the project, session file and workflow data.
 
-An interrupted independent review can be retried only with verified prior termination and unchanged candidate evidence. Existing attempts remain counted. A cleanly closed project uses the storage resume path, even in the same folder; it does not have old locks to reclaim.
+Reopen the saved conversation from the same project with the same profile,
+installed packages and session storage, replacing `SESSION_ID` with its full ID:
 
-Where permitted, `/controlled-dev close-attempt` closes a blocked, reconciled attempt without claiming the objective complete. Partial work, logs and counters remain preserved and are not integrated as a successful result.
+```sh
+pi --session SESSION_ID
+```
 
-Most controlled operations have a ten-minute deadline; single-task proposal analysis has five minutes. Source inventory and request/result sizes are bounded. Oversized inputs produce an explicit error rather than silently dropping files or truncating proposed work. See the manual for the limits and supported recovery cases.
+Check `/session` for the same ID and retained history. Do not substitute
+`--continue`, which selects the most recent conversation, or `--session-id`,
+which can create an identity when it is absent. Do not fork the session.
+Then inspect status and use the task ID shown there:
+
+```text
+/controlled-dev status
+/controlled-dev recover TASK_ID
+/controlled-dev resume TASK_ID
+```
+
+`recover` verifies and consumes the completed release, restores fresh authority
+for the same persistent owner and preserves accepted Scout work and counters.
+`resume` continues that task and presents any required fresh confirmations.
+Reopening the Pi conversation alone does not recover its workflow or authorize
+new work. A transferred project uses its separate storage-resume procedure.
+
+## Recover or close a blocked attempt
+
+Recovery, reconciliation, repair and resume are distinct operations. Inspect
+status first and use only the path allowed by its saved state:
+
+```text
+/controlled-dev recover TASK_ID
+/controlled-dev reconcile TASK_ID
+/controlled-dev repair TASK_ID
+/controlled-dev resume TASK_ID
+```
+
+Process-death recovery still requires verifiable ownership and termination.
+A session ID, PID, missing lock or reassuring agent message is insufficient.
+Repair verifies the existing journal; it does not invent missing effects,
+results or approvals. An interrupted independent review can be retried only
+with proven prior termination and unchanged candidate evidence; attempts remain
+counted.
+
+To abandon an eligible recovered **BLOCKED** attempt, including one with a
+Developer result already present, use:
+
+```text
+/controlled-dev close-attempt TASK_ID
+```
+
+The host requires verified recovery authority, the current candidate and
+revision, quiescent children/commands and a native confirmation. It rechecks the
+candidate and quiescence around that confirmation. Success records **FAILED**,
+preserves the candidate, results, logs, specification and counters, and releases
+locks after recording the terminal state. It neither approves the result nor
+integrates partial work or claims the objective complete.
+
+A crash or forced exit without a completed release is outside orderly local
+continuation. Live or uncertain children, uncertain commands, a changed candidate,
+a missing original session or incomplete/mismatched/consumed release remain
+blocked unless another existing recovery path proves its requirements. Across
+PID namespaces, old-process death may be unprovable. Do not delete locks, alter
+saved hashes or classify uncertainty as termination. Preserve the evidence and
+diagnose the blocked state rather than starting a competing task.
+
+Most controlled operations have a ten-minute deadline; single-task proposal
+analysis has five minutes. Individual discovery responses are bounded; large
+inventories use linked pages without silently claiming that a partial view is
+complete. Other oversized requests/results produce explicit errors. See the
+manual for supported states and limits.
 
 ## Update or remove
 
@@ -183,18 +260,18 @@ Close active sessions before updating, and use the same Pi profile:
 pi update git:github.com/sandololab/pi-controlled-dev
 ```
 
-Restart Pi afterward. Pushing a commit to GitHub does **not** update installations on other computers. In Pi 1.3.0, `pi update` without arguments updates Pi itself; `pi update --extensions` updates all packages. For the tarball alternative, reinstall the new tarball into the same prefix.
+Restart Pi afterward. Pushing a commit to GitHub does **not** update installations on other computers. In Pi 1.5.0, `pi update` without arguments updates Pi itself; `pi update --extensions` updates all packages. For the tarball alternative, reinstall the new tarball into the same prefix.
 
-To remove the Git installation from the current profile:
+From the same project, remove its local Git package registration with:
 
 ```sh
-pi remove git:github.com/sandololab/pi-controlled-dev
+pi remove git:github.com/sandololab/pi-controlled-dev -l
 ```
 
 For the tarball alternative:
 
 ```sh
-pi remove "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
+pi remove "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev" -l
 ```
 
 Removal does not cancel an active workflow or erase its data. Preserve profiles, candidates and evidence for as long as needed.
@@ -213,7 +290,7 @@ npm pack --dry-run
 The installation probe is separate:
 
 ```sh
-P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0-beta.4.tgz" \
+P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0-beta.5.tgz" \
   node --test test/product-install.test.mjs
 ```
 

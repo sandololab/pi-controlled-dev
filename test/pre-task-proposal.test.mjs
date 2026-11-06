@@ -138,14 +138,14 @@ test('recorded assets cannot crowd source and configuration out of the planning 
  assert.equal(prompt.includes('"a-recordings/'),false);
  assert.match(prompt,/"otherFileCount":650/);
 });
-test('source discovery exceeds the former 600-file cap without truncation and reports explicit capacity failure',()=>{
+test('source discovery exceeds the former 600-file cap and marks oversized initial views partial',()=>{
  const inventory=new Map(Array.from({length:750},(_,i)=>[`src/module_${String(i).padStart(4,'0')}.py`,'f\t420\t1\thash']));
  inventory.set('recordings/mission.wav','f\t420\t1\thash');inventory.set('.git/config','f\t420\t1\thash');
  const index=JSON.parse(sourceFileIndex(inventory));assert.equal(index.sourceFileCount,750);assert.equal(index.otherFileCount,1);
  assert.equal(index.sourceByteCount,750);assert.deepEqual(index.sourceFileBytes[0],['src/module_0000.py',1]);
  assert.equal(index.sourceIndexComplete,true);assert(index.sourceFiles.includes('src/module_0749.py'));assert.equal(index.sourceFiles.some(p=>p.startsWith('.git/')),false);
  const oversized=new Map(Array.from({length:750},(_,i)=>[`src/${'x'.repeat(100)}_${i}.py`,'f\t420\t1\thash']));
- assert.throws(()=>sourceFileIndex(oversized),error=>error.code==='SOURCE_INDEX_LIMIT');
+ const compact=JSON.parse(sourceFileIndex(oversized));assert.equal(compact.sourceIndexComplete,false);assert.equal(compact.inventoryComplete,true);assert.equal(compact.catalogComplete,false);assert.equal(compact.sourceFileCount,750);
 });
 test('pre-task closed output rejects authority, root overrides, traversal, guessed tests and foreign request binding',t=>{
   const {repo}=setup(t),q=preTaskRequest(repo,'Document the objective');
@@ -247,7 +247,7 @@ for(const recovery of ['retry in panel','return and retry command'])test(`failed
  bus.proposalFactory=q=>planningProposal({schemaVersion:1,phase:'PROJECT_PLANNING_PROPOSAL',proposalOnly:true,requestId:q.requestId,requestHash:hashCanonical(q),strategy:'Completare gli incrementi richiesti',plannedTasks:[{plannedTaskId:'documentation',title:'Documentazione',objective:'Documentare il risultato',rationale:'Risultato osservabile',scopeIntent:['README.md'],acceptanceIntent:['La guida spiega il risultato'],validationIntent:['Review della guida'],dependsOn:[],dependencyRationale:[],relevantMemoryIds:[]}]});
  const emit=bus.emit.bind(bus);bus.emit=(name,value)=>{if(name==='pi-subagents:runtime-agent-register:v1'&&value.name!==PRE_TASK_SCOUT_NAME){value.result={ok:true,registration:{dispose(){}}};return}emit(name,value)};
  const hooks=new Map(),notices=[],actions=[recovery==='retry in panel'?"Retry analysis":"Back to project"];let command;
- extension({events:bus,registerCommand(_name,value){command=value},on(name,fn){const list=hooks.get(name)??[];list.push(fn);hooks.set(name,list);return()=>{}},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(){}});
+ extension({events:bus,registerCommand(_name,value){command=value},on(name,fn){const list=hooks.get(name)??[];list.push(fn);hooks.set(name,list);return()=>{}},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(){}});
  const ctx={mode:'tui',cwd:repo,sessionManager:{getSessionId:()=> 'owner'},ui:{notify:(message,type)=>notices.push({message,type}),editor:async()=>assert.fail('Goal already saved'),confirm:async()=>assert.fail('No approval requested'),select:async(title,options)=>{const action=actions.shift();assert.ok(options.includes(action),action);if(title.startsWith("Project analysis interrupted")){assert.equal(bus.requests.filter(r=>r.method==='spawn').length,1);if(action==="Retry analysis"){bus.failed=false;actions.push("Back")}}return action}}};
  for(const hook of hooks.get('session_start'))await hook({},ctx);
  try{await command.handler('project plan',ctx);
@@ -395,4 +395,42 @@ test('domain profile reaches native task planning with the existing core methodo
  assert.equal(result.proposalOnly,true);assert.match(task,/Preserve requirement source links/);assert.match(task,/Technical evidence requested by caller/);
  assert.doesNotMatch(task,/Implementation only marker|Changed after construction/);assert.match(task,/PACKAGE GUIDANCE/);assert.match(task,/Project Memory remain binding/);
  assert.deepEqual(bus.definition.tools,['read']);assert.equal(bus.definition.inheritSkills,false);
+});
+
+
+test('INDEX-64 complete directory and file pages preserve long Unicode paths and bind one inventory',async t=>{
+ const {root}=setup(t),{createHash}=await import('node:crypto'),{sourceIndexForAgent,SOURCE_INDEX_RESPONSE_BYTES}=await import('../src/source-file-index.ts');
+ const storeRoot=join(root,'catalog');mkdirSync(storeRoot);mkdirSync(join(storeRoot,'artifacts'));const written=[];
+ const store={root:storeRoot,put(id,content,mediaType){const relativeStorePath='artifacts/'+id;writeFileSync(join(storeRoot,relativeStorePath),content);written.push(content);return {schemaVersion:1,id,digest:createHash('sha256').update(content).digest('hex'),bytes:Buffer.byteLength(content),relativeStorePath,mediaType}}};
+ const inventory=new Map([['.', 'd\t493'],['src','d\t493'],['src/README.md','f\t420\t9\thash']]);
+ for(let i=0;i<1600;i++)inventory.set(`vendor/pkg_${i}/`+'cartella_é漢字/'.repeat(6)+`modulo_${i}.ts`,'f\t420\t4\thash');
+ for(let i=0;i<60;i++)inventory.set(`src/modulo_é漢字_${i}.py`,'f\t420\t2\thash');
+ inventory.set('src/'+'long_é漢字/'.repeat(140)+'end.py','f\t420\t5\thash');
+ inventory.set('assets/data.bin','f\t420\t8\thash');inventory.set('.git/config','f\t420\t7\thash');
+ const before=[...inventory],view=JSON.parse(sourceIndexForAgent(inventory,store));
+ assert.deepEqual([...inventory],before);assert.equal(view.sourceIndexComplete,false);assert.equal(view.catalogComplete,true);assert.equal(view.inventoryComplete,true);
+ assert(Buffer.byteLength(JSON.stringify(view))<=65536);assert(view.directoryPreview.findIndex(d=>d.path==='src')>=0);
+ assert.equal(view.directoryPreview[0].dependency,false);
+ const walk=(path,kind)=>{const rows=[];let offset=0,pages=0;const seen=new Set();while(path){assert(!seen.has(path));seen.add(path);assert(path.startsWith(view.catalog.artifactPrefix));const raw=readFileSync(path,'utf8'),page=JSON.parse(raw);assert(Buffer.byteLength(raw)<=SOURCE_INDEX_RESPONSE_BYTES);assert.equal(page.inventoryDigest,view.inventoryDigest);assert.equal(page.view,kind);assert.equal(page.pageComplete,true);assert.equal(page.sourceIndexComplete,false);assert.equal(page.offset,offset);offset=page.end;rows.push(...page.entries);path=page.next;pages++;if(!path)assert.equal(offset,page.total)}return {rows,pages}};
+ const files=walk(view.catalog.filesPage,'files'),dirs=walk(view.catalog.directoriesPage,'directories');
+ assert(files.pages>1);assert(dirs.pages>1);
+ const expected=[...inventory].filter(([path,kind])=>kind.startsWith('f\t')&&!path.startsWith('.git/')).map(([path])=>path).sort();
+ assert.deepEqual(files.rows.map(r=>r.path).sort(),expected);assert.equal(new Set(files.rows.map(r=>r.path)).size,expected.length);
+ for(const d of dirs.rows)if(d.files){const page=JSON.parse(readFileSync(d.firstFilePage,'utf8'));assert(page.offset<=d.start&&d.start<page.end);assert.equal(files.rows.slice(d.start,d.end).length,d.files);assert(files.rows.slice(d.start,d.end).every(r=>r.path.slice(0,r.path.lastIndexOf('/'))===d.path))}
+ assert(written.every(s=>Buffer.byteLength(s)<=SOURCE_INDEX_RESPONSE_BYTES));
+ assert.throws(()=>sourceIndexForAgent(inventory),error=>error.code==='SOURCE_INDEX_STORE_REQUIRED');
+});
+
+test('INDEX-64 pre-task dispatch advertises readable exact artifact pages with unchanged source and tools',async t=>{
+ const {root,repo,bus}=setup(t),{DurableStore}=await import('../src/store.ts');const data=join(root,'profile');mkdirSync(data);
+ for(let i=0;i<500;i++)writeFileSync(join(repo,`source_${'é'.repeat(65)}_${i}.py`),'pass');
+ const store=DurableStore.project(data,repo,'planning',()=> 'ACCEPT',true);
+ let catalogRead=false;bus.afterSpawn=()=>{const prompt=bus.requests.find(r=>r.method==='spawn').params.task,match=/"directoriesPage":"([^"]+)"/.exec(prompt);assert(match,'Real artifact path must reach Scout');const page=JSON.parse(readFileSync(match[1],'utf8'));assert.equal(page.view,'directories');assert.equal(page.pageComplete,true);catalogRead=true};
+ const before=inventoryTree(repo),scout=new PreTaskScout(bus,'owner',undefined,()=>store);t.after(()=>scout.close());
+ await scout.propose(repo,'Document the objective');assert(catalogRead);assert.deepEqual(inventoryTree(repo),before);assert.deepEqual(bus.definition.tools,['read']);assert.match(bus.definition.systemPrompt,/exact host-advertised source-index catalog/);
+});
+
+test('INDEX-64 small project preserves the legacy exact serialized fingerprint',()=>{
+ const inventory=new Map([['src/z.ts','f\t420\t3\th'],['src/a.py','f\t420\t2\th'],['asset.bin','f\t420\t4\th'],['.git/config','f\t420\t1\th']]);
+ assert.equal(sourceFileIndex(inventory),JSON.stringify({sourceFiles:['src/a.py','src/z.ts'],sourceFileCount:2,sourceByteCount:5,sourceFileBytes:[['src/a.py',2],['src/z.ts',3]],otherFileCount:1,sourceIndexComplete:true}));
 });

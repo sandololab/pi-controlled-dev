@@ -143,7 +143,7 @@ test('P14F.4 command records typed failure without parent fallback and retains U
     {role:'Scout',contract:'DATA-003/ScoutResult',validationLayer:'structural',path:'$.relevantFiles[0]',reasonCode:'PATH',runId:'unknown-probe',outputClass:'object'})});
   extension({registerCommand(_name,c){command=c.handler},events:{on(){return()=>{}},emit(name,r){
     if(name==='pi-subagents:runtime-agent-register:v1')r.result={ok:true,registration:{dispose(){}}};
-  }},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(){},
+  }},getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(){},
     on(name,fn){const list=handlers.get(name)??[];list.push(fn);handlers.set(name,list);return()=>{}}});
   const ctx={cwd:b.root,mode:'tui',sessionManager:{getSessionId:()=> 'test-host'},ui:{notify(m){messages.push(m)},async confirm(){assert.fail('no human gate')}}};
   for(const fn of handlers.get('session_start'))fn({},ctx);

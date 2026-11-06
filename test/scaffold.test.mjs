@@ -166,7 +166,7 @@ test('P2-TEST-003 — bounded imports and extension lifecycle registration', asy
     if(name==='pi-subagents:runtime-agent-register:v1'){registered.push(request.name);request.result={ok:true,registration:{dispose(){disposed.push(request.name)}}}}
   }};
   let activeTools=['read','write','edit','bash'];
-  extension.default({registerCommand(){},events:bus,getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],
+  extension.default({registerCommand(){},events:bus,getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],
     setActiveTools(names){activeTools=names},on(name,handler){const list=handlers.get(name)??[];list.push(handler);handlers.set(name,list);return()=>{}}});
   assert.deepEqual([...handlers.keys()].sort(),['before_agent_start','context_with_system','input','session_shutdown','session_start','tool_call']);
   for(const handler of handlers.get('session_start'))handler({}, {sessionManager:{getSessionId:()=> 'session'}});
@@ -183,7 +183,7 @@ test('P14F registration checkpoint — native context boundary, selectors and no
   const {default:extension}=await import('../extensions/controlled-dev.ts');
   const commands=new Map(),handlers=new Map();let tools=['read','write','bash'],calls=0;
   extension({registerCommand(name,command){commands.set(name,command)},events:{on(){return()=>{}},emit(){}},
-    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],setActiveTools(names){tools=names},
+    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],setActiveTools(names){tools=names},
     on(name,handler){const list=handlers.get(name)??[];list.push(handler);handlers.set(name,list);return()=>{}}});
   const projectRoot=mkdtempSync(join(tmpdir(),'controlled-dev-status-'));t.after(()=>rmSync(projectRoot,{recursive:true,force:true}));
   const messages=[],ctx={mode:'tui',cwd:projectRoot,sessionManager:{getSessionId:()=> 'fresh-host-session'},

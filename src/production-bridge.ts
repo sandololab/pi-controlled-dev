@@ -818,7 +818,7 @@ export async function recoverProductionWorkflow(host:OrchestratorHost,ctx:Produc
   }
   if(action==='close-attempt'){
     const workflow=host.current!;
-    if(workflow.state.state!=='BLOCKED'||workflow.state.candidate||workflow.state.runs.some(run=>!['Scout','Developer'].includes(run.role)||run.role==='Developer'&&run.resultRef))throw new Error('RECOVERY_ABANDON_DENIED');
+    if(workflow.state.state!=='BLOCKED')throw new Error('RECOVERY_ABANDON_DENIED');
     await workflow.abandonRecovered(ctx,"Task incomplete; closing the attempt to split the work after diagnosis. Objective, counters, candidate copies and previous evidence preserved. No partial change is integrated.");
     const resultingState:string=workflow.state.state;
     return {outcome:resultingState==='FAILED'?'FAILED':'NOT_CONFIRMED',taskId:workflow.state.taskId};

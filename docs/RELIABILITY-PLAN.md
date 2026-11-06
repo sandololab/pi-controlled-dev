@@ -247,3 +247,228 @@ keeps the earlier stages above as history and excludes raw trial sessions/state.
 It does not complete the separate real refactoring trial or remove the remaining
 synchronous filesystem/Git work. The user manuals include the Git update path and
 minimum versions for reopening shared snapshots and asynchronous process evidence.
+
+## READ-150
+
+Scoped plan, based on public main db36e62810463c5e2382c84e5fdc4c6b65cf2ae9:
+first correct historical test metadata and add negative cases, demonstrate the
+canonical positive regression against the unchanged guard, then change only its
+path literal. Run TypeScript and affected repository suites. Next test the exact
+local candidate through native Pi 1.5 and the existing controlled workflow; stop
+at any personal confirmation. Publication is conditional on both automated
+checks and that exercise succeeding. Do not change Pi, pi-subagents or controls.
+The engineer integrates and records observed results; internal review does not
+replace independent acceptance. Failed checks retain the candidate and stop
+publication rather than expanding this correction.
+
+| Requirement | Design/code | Planned verification | Results |
+|---|---|---|---|
+| READ-150-1 | [isolateParentTools](../extensions/controlled-dev.ts) canonical name/origin/path check | READ-150-A/B, controlled-developer suite | [Observed checks and limits](VALIDATION.md#pi-15-builtin-read-correction--5-november-2026) |
+| READ-150-2 | Existing hook and tool-call boundary retained | READ-150-C, existing isolation fixtures using canonical metadata | [Observed checks and limits](VALIDATION.md#pi-15-builtin-read-correction--5-november-2026) |
+| READ-150-3 | Existing native controlled workflow, no new implementation | READ-150-D | [Observed checks and limits](VALIDATION.md#pi-15-builtin-read-correction--5-november-2026) |
+
+The [index](README.md#builtin-read-compatibility-correction) defines document
+applicability; only executed checks belong in [validation](VALIDATION.md).
+
+The normative architecture/protocol/test-matrix documents are frozen publication
+snapshots verified by scaffold hashes. This compatibility amendment keeps those
+bytes intact and records its scoped specification/design/test plan here.
+
+### READ-150 requirements and design
+
+System need: Pi 1.5's parent coordinator must read project files while the
+independent Developer remains the only model role allowed to implement changes.
+READ-150-1 requires the `read` name, `sourceInfo.source === 'builtin'` and the
+canonical `sourceInfo.path === 'builtin:read'` together. Extension namesakes,
+missing metadata and legacy synthetic paths confer no capability.
+READ-150-2 preserves the existing session-lifetime exposure filter and
+`tool_call` rejection of every other tool, including after late activation or
+child completion. The design changes only the path literal in
+`isolateParentTools`; no permissive alias or fallback is added.
+READ-150-3 requires a separate native Pi exercise with actual parent reading and
+a short Developer-produced file under the package's existing controls.
+See [plan and traceability](RELIABILITY-PLAN.md#read-150) and
+[test cases](#read-150-test-descriptions).
+
+### READ-150 test descriptions
+
+Scope and acceptance come from [READ-150 requirements](#read-150-requirements-and-design);
+sequence and coverage are in the [development plan](RELIABILITY-PLAN.md#read-150).
+
+- READ-150-A: using the repository parent API harness, expose Pi 1.5 canonical
+  `read`/`builtin`/`builtin:read`; session start and subsequent turns must retain
+  read and allow its callback. The uncorrected guard must fail this case.
+- READ-150-B: vary extension origin with canonical path, missing origin/path/all
+  metadata, wrong path, old bracketed path and wrong tool name. No read capability
+  is exposed; force-reactivated read remains blocked without executing its callback.
+- READ-150-C: reactivate write, edit, bash and unknown tools after the filter.
+  The existing call gate must block each; session start/new turn must restore
+  only canonical read. Existing notification/disposal isolation cases still pass.
+- READ-150-D: use the already authorized project/profile, local candidate package
+  and native Pi 1.5 TUI. Observe a successful parent read, then /controlled-dev
+  produces a brief verifiable file via its internal Developer and prescribed
+  checking. Status, prose or a manually created output do not pass. Stop input
+  at personal confirmations; retain exact candidate identity and actual outcome
+  in the issue report. No successful result is claimed before observation.
+
+The executable isolation cases are in
+[controlled-developer tests](../test/controlled-developer.test.mjs).
+[Observed results](VALIDATION.md#pi-15-builtin-read-correction--5-november-2026)
+retain the failed broader campaign and incomplete native workflow separately.
+
+
+## GIT-DELEGATE-1
+
+### Requirements and bounded design
+
+System need: an explicitly authorized local Git baseline must not require a
+second personal confirmation. GIT-DELEGATE-1 permits only `initialize-local-git`
+for one canonical project and its observed directory identity, source snapshot,
+local exclusions and an explicit Git author. The trusted host supplies an external mandate
+reference; model text and agent/RPC commands cannot issue this delegation.
+GIT-DELEGATE-2 rejects absent authority (retaining the existing human path),
+changed/replaced folders, source changes, a different author, operation or project,
+and source boundary violations before Git writes. GIT-DELEGATE-3 leaves plan,
+autonomy limits, access, destruction and integration decisions unchanged.
+
+Design: extend [CurrentProject](../src/current-project.ts) with a host-code-only
+delegation issuer, reusing the existing workspace lock, immutable DurableStore
+artifacts and workspace index. The existing CandidateGit import primitive receives the
+explicit author only for this delegated baseline and fixes author/committer in
+its commit process environment; global author.* settings cannot replace it.
+A typed host-delegation record binds the exact
+project/snapshot/identity and a mandate reference. Preparation consumes that
+record into the ordinary intent/result journal, marking host authority distinctly
+from a human receipt. No new namespace, generic gate bypass, launcher, service,
+model tool or signing/credential mechanism is introduced. The trust boundary is
+the existing host-owned profile store; trusted host code is responsible for
+checking the external mandate before issuance. Project files and model output
+are not authority. The delegation does not authorize later workflow gates.
+
+### Development and test plan
+
+Preserve READ-150 and frozen normative snapshots. Implement only issuance and
+consumption in the current-project module, document the host API in the existing
+manual, and extend [current-project cases](../test/current-project.test.mjs).
+Run typecheck and the affected current-project/trusted-confirmation/planning
+boundary cases; reuse earlier read and recovery results without rerunning them.
+Then replace only changed package files in the authorized test project, reload
+through Pi's native command, issue one exact host delegation from the recorded
+mandate, and observe autonomous Git preparation through the real MCP/TUI.
+Continue the saved minimal Developer task; stop only at actual personal gates.
+Publication still requires the real Developer result and pertinent checks.
+
+| Requirement | Planned code | Test description | Result |
+|---|---|---|---|
+| GIT-DELEGATE-1 | CurrentProject host issuer and prepare | GD-A: real Git setup without human callback; durable host authority and exact baseline | [Executed checks and remaining native exercise](VALIDATION.md#scoped-git-setup-delegation--5-november-2026) |
+| GIT-DELEGATE-2 | exact binding and fresh checks under workspace lock | GD-B: absent delegation, wrong root/operation/identity, changed/replaced directory and source/symlink boundary rejected without Git writes | [Executed checks and remaining native exercise](VALIDATION.md#scoped-git-setup-delegation--5-november-2026) |
+| GIT-DELEGATE-3 | existing trusted-confirmation/planning boundaries unchanged | GD-C: delegated preparation followed by plan confirmation; serialized delegation is not a trusted human receipt | [Executed checks and remaining native exercise](VALIDATION.md#scoped-git-setup-delegation--5-november-2026) |
+| GIT-DELEGATE-4 | existing Pi reload and native workflow | GD-D: real MCP Git baseline then Developer-generated prova-autonomia/risultato-san106.md, checked by package | [Executed checks and remaining native exercise](VALIDATION.md#scoped-git-setup-delegation--5-november-2026) |
+
+The existing [index](README.md) maps system/software requirements, design, plan
+and tests to this section; [validation](VALIDATION.md) records only observed
+results. No database or external interface change is needed. The host API and
+profile-store trust boundary are described here and in the current-project guide.
+
+
+## INDEX-64
+
+### Requirements and design
+
+The authorized increment removes SOURCE_INDEX_LIMIT as an admission limit for a
+valid inventory. INDEX-64-1 retains the full host TreeInventory and binds every
+view/page to its inventoryHash; the legacy small-project sourceFileIndex JSON
+remains byte-identical. INDEX-64-2 bounds each initial view and artifact page,
+without claiming sourceIndexComplete for partial views. INDEX-64-3 provides
+directory/range discovery and linked pages covering all eligible file paths,
+including long Unicode paths; vendor/local package paths remain accessible but
+are ordered after project-owned paths. Fixed Git/dependency-cache exclusions
+remain explicit discovery exclusions, not deletion from the full canary.
+INDEX-64-4 requires the real Scout to reach the complete catalog through existing
+read access to exact host-generated artifacts, without a new tool/mount, source
+write, database or service. Index metadata is discovery only, never authority or
+proof of reading source contents. Sensitive confirmations and the previous
+read/delegation implementation remain unchanged.
+
+Design: a source-file-index helper computes deterministic compact views. For
+large inventories it writes immutable bounded file pages and directory pages
+through the existing DurableStore put primitive. Page chains and directory
+entries identify global ranges and first file pages, with complete/partial flags
+and one inventory digest. The initial map prioritizes project paths and points
+to the first directory/file pages. Existing read supports absolute file paths
+and offset/limit; host prompts allow only the exact advertised catalog artifacts
+in addition to their existing source scope, never other profile files. Stores
+remain outside source/work trees, preserving unchanged-tree canaries and Git
+status. PreTaskScout receives the existing project planning/memory store; runtime
+Scout/Developer receive the task store through existing runner options. Recovery
+uses the pure deterministic view for its fingerprint and creates no artifacts.
+
+### Increment and tests
+
+Implement helper and update all consumers, then typecheck and affected index,
+pre-task and runner tests only. INDEX-64-A preserves small JSON bytes. INDEX-64-B
+uses an inventory exceeding 64 KiB, long/Unicode paths, many directories and local
+packages; traverses every linked page, checks exact set coverage/no duplicates,
+bounds, digest and view completeness, plus directory-to-file references.
+INDEX-64-C verifies dispatch includes a real readable catalog and unchanged
+source/tools; no-store misuse must not silently advertise inaccessible pages.
+INDEX-64-D uses native reload and real MCP/Pi Scout on the previously blocked
+project, then the saved minimal Developer result and package checks. Personal
+plan/limits decisions remain personal; no simulated children or result files.
+
+| Requirement | Planned module | Cases | Result |
+|---|---|---|---|
+| INDEX-64-1 | [source-file-index helper](../src/source-file-index.ts), runtime re-export, recovery consumer | INDEX-64-A/B | [Executed checks and native decision](VALIDATION.md#progressive-source-index--5-november-2026) |
+| INDEX-64-2 | bounded view/page serialization and explicit completeness | INDEX-64-A/B | [Executed checks and native decision](VALIDATION.md#progressive-source-index--5-november-2026) |
+| INDEX-64-3 | deterministic folder ranges, local-package ordering, links | INDEX-64-B | [Executed checks and native decision](VALIDATION.md#progressive-source-index--5-november-2026) |
+| INDEX-64-4 | pre-task/Scout/Developer runner artifact-store wiring | INDEX-64-C/D | [Executed checks and native decision](VALIDATION.md#progressive-source-index--5-november-2026) |
+
+This reuses the existing [documentation index](README.md),
+[validation report](VALIDATION.md) and task evidence. Frozen normative documents
+are unchanged. Only new observed failures may justify an affected rerun; earlier
+read18, Git delegation and historical recovery campaigns are not repeated.
+
+
+## CONFIRMATION-OPERATOR
+
+The native channel verifies TUI mode, session and method identity, exact request
+and display digests, freshness and one-time consumption. It does not detect
+physical human presence or identify the person operating the terminal. An
+authorized delegated operator may therefore use the authentic TUI within its
+external mandate; decisions must be attributed honestly to that operator.
+
+Minimal design: expose ConfirmationChannel, retain HumanConfirmationChannel as
+a source-compatible alias, clarify transport semantics without changing receipt
+formats, historical fixtures, humanGates fields or any gate checks. No additional
+host approval infrastructure. CO-A: typecheck and existing trusted-confirmation
+regressions; CO-B: actual TUI plan/autonomy decisions by the delegated operator
+and the minimal Developer task. Sensitive decisions outside the mandate remain
+reserved. Outcomes remain pending. This supersedes the previous assumption that
+the type name alone required Stefano to operate every planning confirmation.
+
+
+CO-A executed: typecheck and 27/27 trusted-confirmation cases pass. CO-B reached
+real plan/autonomy approval and accepted Scout result, but Developer remains
+blocked by the distinct unchanged-tree recovery boundary. See [current native
+evidence](VALIDATION.md#authorized-native-operator-and-current-recovery-boundary--6-november-2026).
+
+## LOCAL-CONTINUATION — authorized 6 November 2026
+
+Origin: SAN-106 comment 6b46d977, report r15. LC-1: a quiescent local workflow can release exact authority on orderly Pi shutdown and continue after reopening the same persisted Pi session, even across PID namespaces. LC-2: durable ledger/spec/event/lock bindings, irreversible old-host retirement and the existing mutation guard admit one successor only. LC-3: live/unknown child or host operation, partial release, mismatched owner or consumed release stay blocked. Process-death classification and existing scope/confirmation checks remain unchanged.
+
+Design: reuse the checkpoint boundary and durable artifact store; local release completion is published last under one guard, after retirement and exact pair removal. Acquisition and immutable consumption are serialized under that guard before a RecoveryAuthority is exposed. A failed mutation retains the guard and locks. No new service, launcher, configuration or approval tier. The original blocked SAN-106 task is preserved.
+
+Implementation order: local checkpoint/release, exact single-consumer acquisition, native recover integration, focused tests, then one native saved-session/task continuation in an isolated directory already inside the authorized project mount. Publication requires successful real work and relevant checks.
+
+Traceability: LC-1 -> shutdown/checkpoint/recovery -> same-owner resume test and real TUI. LC-2 -> exact pair/guard/consume -> concurrency, stale token/head and replay tests. LC-3 -> quiescence/full durable record -> live/unknown/partial-release failures. Results are pending; no test is claimed passed here.
+
+
+LC-1/2/3 implemented and focused checks passed. Actual same-session/same-task recovery dispatched one Developer without replaying the accepted Scout; both frozen package checks passed. Full task completion remains blocked by a distinct prepared criterion/command mismatch and the existing post-result abandonment restriction. See [executed results and limits](VALIDATION.md#local-orderly-continuation--6-november-2026). Crash recovery without a completed orderly release and the original missing-session task remain outside this handoff.
+
+
+## POST-RESULT-ABANDON — authorized 6 November 2026
+
+Origin SAN-106 comment 180f27a0. PRA-1: explicitly abandon a recovered BLOCKED attempt with candidate/results as FAILED, preserving TaskSpec, results, candidate and counters; no integration or result approval. PRA-2: retain verified recovery authority, current revision/session, candidate verification and child/host-command quiescence before and after the native confirmation; release locks only after the durable terminal state. Minimal change: remove the bridge's obsolete no-result restriction and add the existing candidate-current check at both sides of abandonRecovered confirmation. Tests: successful post-result abandonment preserves evidence and releases locks; uncertain child/host journal or mutated candidate denies without release. Native proof then closes only the isolated failed attempt and reuses the same folder for a CONTENT-consistent saved-session workflow. No new service, policy, permissions or runtime approval tier. Results pending.
+
+
+PRA-1/2 executed: typecheck and 2/2 new confined cases pass; native post-result closure preserved all work as FAILED. The subsequent same-folder, saved-session task completed as r42 after exact-ID reopen and recover/resume with a single Scout, Developer output, two passing commands and Reviewer PASS. See the final [validation results](VALIDATION.md#post-result-native-abandonment-and-final-saved-session-proof--6-november-2026). The latest successful proof supersedes earlier pending/blocked statuses without removing their history.

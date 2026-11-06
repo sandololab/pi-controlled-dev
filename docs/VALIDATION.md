@@ -4,6 +4,46 @@
 
 This is a development beta. The failures recorded during the initial publication have been investigated and corrected. Historical campaign reports and current automated checks describe different revisions.
 
+## Pi 1.5 builtin read correction — 5 November 2026
+
+Uncommitted candidate based on public main
+`db36e62810463c5e2382c84e5fdc4c6b65cf2ae9` (beta.4). This is a scoped
+follow-up, not a new release or a successful full acceptance campaign.
+Requirements, design, test descriptions and traceability are in the existing
+[reliability plan](RELIABILITY-PLAN.md#read-150).
+
+- Baseline and candidate TypeScript checks passed with Node.js 24.22.0 and
+  the existing TypeScript 5.9.3. The canonical positive regression failed
+  against the unchanged guard, then passed after the one-literal correction.
+- The focused READ-150/P12.1 isolation group passed **18/18**. Historical
+  positive metadata now uses `builtin:read`; bracketed metadata is rejected
+  explicitly. Origin, call interception and session restrictions are retained.
+- Ten affected portable suites completed with **288 cases: 208 passed,
+  80 failed**, exit 1. Failures were in recovery-resume (48), recovery (16),
+  store-repair (15) and document snapshot integrity (1). The snapshot failure
+  was corrected by preserving frozen normative files and retaining the scoped
+  amendment in the mutable reliability plan; its isolated rerun passed **1/1**.
+  No test hash or assertion was weakened. The 79 other failures remain unresolved;
+  this is not a clean full run. Process-proof errors include
+  `PROCESS_INCARNATION_UNAVAILABLE`, `OWNER_INCARNATION_UNAVAILABLE`,
+  `RECONCILIATION_AUTHORITY_UNAVAILABLE` and `REPAIR_OWNER_UNCERTAIN`.
+  The pre-WAL recovery case also fails with `PROCESS_INCARNATION_UNAVAILABLE`
+  on an untouched archive of the base commit in this environment. That proves
+  this representative failure predates the patch; it does not classify every
+  remaining failure or authorize process/sandbox changes.
+- Native Pi **1.5.0**, using the exact candidate source/test bytes as a local
+  package and the existing separate profile, successfully called builtin read
+  on the supplied four-value input. The controlled workflow then stopped at
+  its project-commit-name question. No personal answer was supplied by an agent,
+  no internal Developer output was produced, and the complete workflow has not
+  passed. Final report/plan-only documentation amendments postdate this runtime
+  copy; code and tests remain identical.
+
+Internal static review found no concrete defect; it does not replace independent
+acceptance. No changes to Pi, pi-subagents, permissions or confirmation controls
+were made. No commit or push is authorized by these incomplete results. Raw
+TUI/session data and machine-specific evidence remain outside the package.
+
 ## Publication verification — 21 October 2026
 
 Version **0.1.0-beta.4** supersedes the public beta.2. The complete portable run
@@ -102,3 +142,186 @@ npm pack --dry-run --ignore-scripts
 ```
 
 `test/product-install.test.mjs`, `test/recovery-historical.test.mjs` and `npm run test:pi-integration` need explicit external inputs/installations. They are outside the portable suite; see the README and the corresponding test files. The repository remains `UNLICENSED` and npm publication remains disabled.
+
+
+## Scoped Git setup delegation — 5 November 2026
+
+The authorized GIT-DELEGATE increment preserves the READ-150 delta. TypeScript
+passed. In a read-only-root Bubblewrap process with a fresh temporary /tmp,
+current-project and trusted-confirmation tests reported 55 cases: 54 passed and
+one failed in the existing CandidateGit.apply process-incarnation evidence.
+The same single integration case fails on the intact public baseline with the
+same json:NON_JSON:$.processIncarnation error. The ordinary run first encountered
+an existing ancestor Git marker in the execution temporary directory; no such
+metadata was removed or changed.
+
+After correcting a test import-order issue exposed by name-filtered execution,
+all 16 targeted GD cases and sensitive autonomy approval/cancellation/forgery
+cases passed. The 27 trusted-confirmation cases passed in the broader invocation.
+The 18 read-isolation results and 112-case recovery comparison remain earlier
+evidence and were not rerun. The identity is required both at issuance and when
+reading persisted delegation; author/committer are fixed in the delegated commit
+process so global author settings cannot replace the authorized identity.
+
+Native Pi 1.5 reload succeeded in the existing operator-owned session. The trusted
+host issued the narrow delegation through Pi's existing host shell, in the same
+project/profile confinement (the Codex shell's different ancestor Git markers
+prevented issuance there). No launcher, model tool or human receipt was added.
+The saved delegation has digest
+`e21be4f22ab8554c5f485e1bd6357704dba7ba304461a0dea74f3f07d959a08d`.
+The subsequent /controlled-dev invocation autonomously initialized exactly one
+Git commit, `57e0685bfac6196597c39dee2e550226409af74e`. Its durable workspace result
+references HostDelegatedAuthorization and that delegation.
+
+The next planning step stopped before dispatch with SOURCE_INDEX_LIMIT: the
+project's source file list (including local vendor package files) exceeds the
+existing 64 KiB bound. The existing planner builds its inventory from all tracked
+files before applying task hints, so a narrower natural-language objective does
+not remove this prerequisite. No limit was raised, file hidden, source deleted
+or further package correction introduced. The Developer has not run and the
+required output is absent; no publication or final cleanup is claimed. See the
+[requirements and traceability](RELIABILITY-PLAN.md#git-delegate-1) and
+[host API usage](SOURCE-REFACTORING.md#host-delegated-local-git-preparation).
+
+
+Final checkpoint: the persisted-author fix was already present in the loaded
+candidate. Three pertinent author regressions were rerun and passed: absent
+author, malformed author, and global user/author/committer changes. Native MCP
+verification confirmed the loaded current-project/candidate-git/extension/test
+hashes match the tested candidate, both Git author and committer match the
+stored explicit delegation, exactly one initial commit exists, and the Developer
+output is absent. The SOURCE_INDEX_LIMIT blocker remains unchanged.
+
+Generated baseline-only node_modules were removed after the completed baseline
+comparisons. Baseline source, compact evidence, candidate, runtime vendor, input,
+rollback copies, profiles/credentials and the operator session remain preserved.
+
+
+## Progressive source index — 5 November 2026
+
+INDEX-64 preserves the previous read/delegation delta. Typecheck passed.
+The affected pre-task/Scout/Developer invocation reported 125 cases: 122 passed,
+3 failed with PROCESS_INCARNATION_UNAVAILABLE at personal-gate creation. These
+three cases remain unresolved and were not silently reclassified as passing;
+no correction was made to process identity or confirmations. The pre-task suite
+passed 44/44. Final index regressions passed 4/4 (overlapping earlier cases):
+legacy byte fingerprint, oversize partial map, complete linked directory/file
+catalog with long Unicode paths and no lost/duplicate eligible paths, and
+readable artifact delivery with unchanged source and tools. Static review found
+no concrete defect; it does not replace independent acceptance.
+
+After native /reload, the real Scout cad18d37-6ea5-4089-b88d-d545c68bfce6
+completed in 38 seconds using openai-codex/gpt-6.1-sol. Its transcript records
+successful read results for both directories-0 and files-0 of catalog digest
+3ee380d41abf4a7d4d3f948243d40fe968e5d7a5b58ffbc0e5698f40f44b5271,
+then prova-autonomia/input.txt and pertinent project files, followed by a
+structured proposal. Catalog reachability by the real read-only Scout is thus
+observed, not inferred from host-side file creation. The TUI now displays
+Read the proposed plan, draft revision 1 for the saved minimal objective.
+Inputs stop at Approve the plan: plan/limits remain personal decisions.
+The Developer has not started; no result or package commit/push is claimed.
+Only the local test package was synchronized; session and credentials persist.
+
+
+
+## Authorized native operator and current recovery boundary — 6 November 2026
+
+ConfirmationChannel is the canonical type; HumanConfirmationChannel remains a
+source-compatible alias. Neither mode/session/ui nor the native receipt asserts
+a named person or physical human presence. Existing session/method/digest/
+freshness/one-time-consumption behavior is unchanged. Typecheck passed and the
+existing trusted-confirmation suite passed 27/27. No historical fixture format
+was changed for this clarification. The redundant operational-approval module
+and its consumers/tests were withdrawn after preserving their candidate/state.
+
+The delegated Ingegnere used real MCP/TUI to approve plan revision 2 and its
+Controlled Autonomy policy. Native ctx.ui.custom receipts are saved with exact
+request/display/session binding; the operator was the Ingegnere, not Stefano.
+A native clarification kept the single-file objective and corrected a separate
+proposal issue: vendored package.json is not a root-level NPM_TEST suite. The
+existing proposal validator was not modified. The real workflow Scout completed
+and its result was accepted.
+
+Task task-b60ba139-c60a-43bd-92b5-bec1435c2f40 stopped at BLOCKED revision 12 before
+any Developer dispatch: Scope baseline could not be proven. Native read-only
+diagnosis identified ignored .pi/settings.json in the original project; its
+worktree was clean. The same two local package registrations were moved to the
+existing isolated Ingegnere profile, retaining backups and all other profile
+settings. No dependency identity, install, launcher, permission or guard changed.
+After native reload, the same ScopeGuard.open accepts the baseline.
+
+The existing task recovery still returns SCOPE_BASELINE_RECOVERY_UNAVAILABLE:
+scopeBaselineRecoveryData requires prior.originalTreeHash to equal the complete
+current inventory, which includes the removed project-local configuration. A
+native project resume stopped safely without re-running Scout or starting the
+Developer. No stored hash, receipt, counter or task ledger was edited to bypass
+this boundary. The input is unchanged; the result file is absent. The full
+Developer/verification/integration proof and package publication remain pending.
+The already-open maintenance consultation remains on the same assignment.
+
+
+## Required project-local package configuration restored — 6 November 2026
+
+The profile registration described above was a temporary diagnostic arrangement,
+not the required final setup and not validation of project-local package loading.
+The project .pi/settings.json and isolated profile settings were restored byte for
+byte from their preserved copies; the profile packages list is empty again.
+A native reload succeeded without restarting Pi. Native MCP diagnosis then read
+the same two relative project-local package registrations. The complete original
+inventory returned exactly to
+e301f86c3d38a51966a5e371e4061d54a72854581cc4e8d39f4bfc1e74787697.
+
+Git check-ignore identifies .git/info/exclude line 20 (/.pi), and the file is not
+tracked by baseline 955ea7c4fd76353fed7c065cce8f310499fb48a6. With the required
+local configuration restored, ScopeGuard.open again returns SCOPE_BASELINE_INVALID;
+task revision 12 remains BLOCKED, with zero Developer runs and no result file.
+The prior ACCEPT observation applies only to the withdrawn temporary layout.
+
+Code inspection distinguishes baseline content from writable scope: a tracked
+.pi/settings.json can be part of the clean baseline; fixedNames forbids changing
+that path through a task. Ordinary Git tracking/commit needs no guard exception.
+However, committing this file creates a new Git baseline, whereas both saved task
+and isolated worktree are bound to 955ea7c4fd76353fed7c065cce8f310499fb48a6.
+ScopeGuard.open checks all three HEAD/base values; scopeBaselineRecoveryData also
+checks the old baseline and inventory. Staging alone leaves an unclean original
+source. No ordinary staging/commit sequence updates those saved bindings.
+
+No commit, index flags, replacement refs, saved baseline edits, new task identity
+or code change was used to bypass this boundary. The maintenance consultation
+now concerns the required local configuration and its native baseline handling,
+not moving packages into a profile. Full Developer proof and publication remain
+incomplete. Existing tests were not repeated for this operational restoration.
+
+
+The later instruction 0e2b5759 explicitly permits native abandonment and a new
+internal execution of the same minimal case, preserving the failed attempt and
+without a new Paperclip task or additional recovery development. That ordinary
+path was attempted with /controlled-dev close-attempt and the exact saved task ID.
+It stopped before the confirmation: TAKEOVER_OWNER_DEATH_UNPROVEN. Native status
+reports STORE_CLEAN, LOCK_OWNER_UNCERTAIN, owner LIVE, reason OWNER_STILL_LIVE,
+safeReclaimPossible=false and zero uncertain children.
+
+After reload the fresh extension has no in-memory orchestrator. close-attempt
+uses recoverProductionWorkflow, which must first restore one through
+takeOverWorkflow. That requires old-owner-death evidence; abandonRecovered also
+requires this recovery authority. No native close confirmation was reached and
+no task termination, Git commit or fresh execution occurred. The original Pi
+process remains open as required. No restart, lock deletion or forged death
+evidence was used. This is a distinct live-owner handoff limitation; neither
+recovery development nor a change to saved baseline values was performed.
+
+## Local orderly continuation and post-result abandonment — 6 November 2026
+
+LC-1..3 and PRA-1/2 are implemented. Orderly shutdown requires a genuinely persisted Pi session, exact current state, quiescent child/host operations and the existing lock pair. Retirement precedes durable release; completion is published last under the existing guard. Acquisition validates and consumes that release once before exposing fresh authority to the same persistent session. Process-death classification is unchanged. Missing/incomplete release, mismatched owner and uncertain processes remain blocked.
+
+Typecheck and diff checking pass. Twenty prior confined cases passed (10 continuation, eight lock-manager and two checkpoint cases), plus one existing generation-2 process-death presentation regression. Two additional post-result regressions pass: confirmed abandonment preserves candidate, Developer/Reviewer evidence, TaskSpec and counters while recording FAILED and releasing locks; candidate mutations before/during confirmation and an uncertain host journal prevent closure/release. The original negative assertion incorrectly expected an unchanged ledger on mutation; the existing guard correctly appends EVIDENCE_INVALIDATED. The corrected assertion verifies that precise append, unchanged prior history/results and retained locks. No protection was weakened. There are 23 distinct affected passing cases; historical broader campaigns are not claimed passed.
+
+The first native diagnostic exposed a gate-presentation validator omission after successful recovery across changed PID namespace labels. The validator now verifies the consumed local release and exact presentation lineage; the pending-gate integration regression passes. The next diagnostic preserved actual Developer output but exposed inconsistent prepared criteria versus approved commands. Both unsuccessful attempts and their evidence remain preserved outside the package.
+
+Native post-result closure of the authorized isolated failed attempt then succeeded as FAILED, with candidate/results/counters unchanged. A new proposal in the same existing test source folder was checked before creation approval: one editable text file, one exact-content criterion, standard diff checking and a matching native CONTENT command. The frozen specification matched that preview; no external script execution was required.
+
+The final real Pi 1.5.0 proof used the existing profile, local packages, confinement and four MCP tools. The session was genuinely persisted, one Scout completed, the task paused before Developer in AWAITING_HUMAN revision 9, and Pi quit normally with a complete release. Explicit reopening of the same session followed by native recover reached revision 10 with identical Scout and counters. Native resume dispatched one Developer; it created only the requested short text file with the exact trailing newline. Both approved commands passed. One Reviewer returned PASS and the ordinary final confirmation completed the same task at revision 42. All children were terminal, no Scout was replayed, and no result was integrated into the original test source.
+
+Raw session/task/run identifiers, ledgers, candidate copies and detailed trial artifacts are retained in SAN-106 evidence rather than distributed with the package. All 99 candidate/runtime TypeScript sources matched during the proof; all 74 protected historical task/lock/configuration files were restored/verified byte-for-byte. Only redundant test dependency copies were removed after normal Pi exit. No credentials were read, copied or hashed.
+
+Crash recovery without a completed orderly release and recovery of the historical owner whose original session file is missing remain outside this verified feature. Publication remains subject to the explicitly authorized channel and exact tested tree.

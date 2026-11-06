@@ -34,7 +34,7 @@ import type { ControlledOracleRegistration } from '../src/controlled-oracle.js';
 import { HumanDecisionStaleError, OrchestratorHost, registeredRoleDispatchers, confirmHumanDisplay } from '../src/orchestrator.js';
 import { createProductionTask, renderProductionStatus, renderProductionProgress, productionStatusPages, inspectProductionTaskInput, readProductionTaskInput, runProductionWorkflow, decideProductionHumanGate, productionRecoveryStatus, recoverProductionWorkflow, rebuildProductionHumanView, productionProjectMemory, productionProjectPlanning } from '../src/production-bridge.js';
 
-interface SessionContext { sessionManager: { getSessionId(): string | undefined }; cwd?:string }
+interface SessionContext { sessionManager: { getSessionId(): string | undefined; getSessionFile?():string|undefined }; cwd?:string }
 // Public Pi UI/session context subset shared by command and interactive input hooks.
 interface CommandContext extends SessionContext {
   mode: string; cwd: string;
@@ -58,7 +58,7 @@ interface ParentToolApi {
 /** Session-lifetime model boundary; host RPC/state operations are not model tools. */
 export function isolateParentTools(pi: ParentToolApi): void {
   const builtinRead = () => pi.getAllTools().some(tool => tool.name === 'read'
-    && tool.sourceInfo?.source === 'builtin' && tool.sourceInfo.path === '<builtin:read>');
+    && tool.sourceInfo?.source === 'builtin' && tool.sourceInfo.path === 'builtin:read');
   const restrict = () => pi.setActiveTools(builtinRead() ? ['read'] : []);
   pi.on('session_start', restrict);
   pi.on('before_agent_start', restrict);
@@ -386,10 +386,11 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
     orchestrator = undefined; owner = undefined; oracle = undefined; reviewer = undefined; developer = undefined; scout = undefined; };
   pi.on('session_start', (_event: unknown, context: SessionContext) => {
     dispose();
+    busy=false;
     const ownerSessionId=context.sessionManager.getSessionId();
     if (!ownerSessionId) throw new Error('CONTROLLED_SESSION_ID_UNAVAILABLE');
     owner = ownerSessionId;
-    proposalScout=new PreTaskScout(pi.events,ownerSessionId,developmentProfile);
+    proposalScout=new PreTaskScout(pi.events,ownerSessionId,developmentProfile,root=>productionProjectPlanning({cwd:root},true)!.store);
     const generation = randomUUID();
     try {
       scout = registerControlledScout(pi, generation);
@@ -405,7 +406,10 @@ export function createControlledDevExtension(profile?: DevelopmentProfile): (pi:
     // Native Pi awaits shutdown handlers. A session that only consulted the
     // adopted project still saves a fresh checkpoint before relinquishing it.
     const root=selectedProjectRoot??context?.cwd;
+    const admitted=!busy&&!wizardActive;busy=true;
     try{
+      if(admitted&&orchestrator?.current&&context.sessionManager.getSessionId()===owner)
+        orchestrator.current.releaseOnSessionShutdown(context.sessionManager.getSessionFile?.());
       if(!orchestrator?.current&&root&&context?.cwd&&context.sessionManager.getSessionId()===owner)
         await releaseProductionProjectStorage({cwd:root});
     }finally{dispose()}

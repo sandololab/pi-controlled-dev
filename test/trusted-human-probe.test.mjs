@@ -75,7 +75,7 @@ test('P14C command/model attack has no approval entry point and preserves parent
   const workspace=mkdtempSync(join(tmpdir(),'human-probe-unit-'));t.after(()=>rmSync(workspace,{recursive:true,force:true}));
   const events=new Map(),commands=new Map();let tools=['read','write','edit','bash','subagent'],calls=0;
   extension({on(name,fn){const list=events.get(name)??[];list.push(fn);events.set(name,list)},registerCommand(name,cmd){commands.set(name,cmd)},
-    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'<builtin:read>'}}],getActiveTools:()=>tools,setActiveTools:names=>{tools=names}});
+    getAllTools:()=>[{name:'read',sourceInfo:{source:'builtin',path:'builtin:read'}}],getActiveTools:()=>tools,setActiveTools:names=>{tools=names}});
   const ctx={...context(),mode:'rpc',cwd:workspace,hasUI:true};ctx.ui.confirm=async()=>{calls++;return true};
   const before=new Set(readdirSync(tmpdir()));
   for(const fn of events.get('session_start'))await fn({},ctx);

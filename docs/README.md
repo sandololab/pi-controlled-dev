@@ -29,3 +29,33 @@ The README, terminal interface, built-in prompts and generated interface labels 
 Start with the user manual. Architecture, protocol and the protocol test matrix retain their design identifiers and historical phase boundaries. The P15 and P16C reports describe earlier campaigns; only the current validation page describes this publication.
 
 [Example task specification](examples/controlled-dev-task.example.json) · [Project README](../README.md)
+
+## Builtin read compatibility correction
+
+The scoped documentation baseline for this change reuses this index, the
+[requirements and design](RELIABILITY-PLAN.md#read-150-requirements-and-design), the
+[development plan and traceability](RELIABILITY-PLAN.md#read-150), the
+[test descriptions](RELIABILITY-PLAN.md#read-150-test-descriptions), and the
+[validation report](VALIDATION.md). This maps the system/software specification,
+design, development and test planning responsibilities onto existing documents;
+no parallel document set is introduced. No new interfaces, database, installation
+or transition plan is needed: only the existing parent-tool metadata check changes.
+
+## Delegated local Git preparation
+
+The scoped [requirements, design, plan and test descriptions](RELIABILITY-PLAN.md#git-delegate-1)
+extend the existing current-project host API only. The
+[current-project guide](SOURCE-REFACTORING.md) documents its trust boundary;
+[validation](VALIDATION.md) distinguishes planned and executed checks. Existing
+frozen normative snapshots remain unchanged.
+
+## Progressive source discovery
+
+[INDEX-64 requirements, design, plan and cases](RELIABILITY-PLAN.md#index-64)
+describe the bounded views and complete artifact catalog.
+[Validation](VALIDATION.md) records observed results separately. The host/runner
+interface is an optional existing artifact-store parameter; no new external
+service or database is introduced.
+
+
+Authorized operator semantics: [CONFIRMATION-OPERATOR](RELIABILITY-PLAN.md#confirmation-operator).

@@ -6,10 +6,15 @@ import type { Json } from './contract-json.js';
 import { validateScalar, validateStructure, hashBytes, parseJson } from './contracts.js';
 import type { ArtifactRef } from './contracts.js';
 
-export interface HumanConfirmationChannel {
+/** Native operator transport, not an identity or physical-presence attestation.
+ * Authorization is supplied by the external mandate; receipts bind the exact
+ * TUI decision and session. Delegated agents must not claim another operator. */
+export interface ConfirmationChannel {
   readonly mode:string; readonly sessionManager:{getSessionId():string|undefined};
   readonly ui:{confirm(title:string,message:string,options?:{timeout?:number}):Promise<boolean>;custom?:CustomUI};
 }
+/** Source compatibility for existing hosts; no additional human detection. */
+export type HumanConfirmationChannel=ConfirmationChannel;
 export type ConfirmationSource='ctx.ui.confirm'|'ctx.ui.custom';
 /** Shared native transport. An affirmative return is not itself an authorization receipt. */
 export async function requestHumanConfirmation(ctx:HumanConfirmationChannel,display:string,title:string):Promise<ConfirmationSource|undefined>{
@@ -129,7 +134,7 @@ export function consumeTrustedConfirmation(receipt:TrustedConfirmationReceipt,re
   sameCurrent(request,readCurrent());channelCurrent();return ref;
 }
 /** Read-only historical integrity/binding check. Trusted store provenance is required; hashes alone do not
- * authenticate a human. This function never registers requests/receipts or grants permission to act. */
+ * establish operator authority. This function never registers requests/receipts or grants permission to act. */
 export function readTrustedConfirmationEvidence(store:Pick<ReceiptStore,'read'>,ref:ArtifactRef,expected:unknown):TrustedConfirmationEvidence{
   if(!validateStructure('ArtifactRef',ref).ok||ref.mediaType!==TRUSTED_CONFIRMATION_MEDIA||ref.bytes>CONFIRMATION_LIMITS.evidenceBytes)fail('TRUSTED_CONFIRMATION_EVIDENCE_INVALID');
   const raw=store.read(ref);if(raw.byteLength!==ref.bytes||hashBytes(raw)!==ref.digest)fail('TRUSTED_CONFIRMATION_EVIDENCE_INVALID');

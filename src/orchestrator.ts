@@ -67,6 +67,7 @@ import type { ScopeCapture, AuthorizedReworkBase } from './scope-guard.js';
 import { evaluateFailure } from './retry-engine.js';
 import type { FailureInput, RetryOutcome, RetryProof } from './retry-engine.js';
 import { LockManager } from './lock-manager.js';
+import { releaseLocalContinuation } from './local-continuation.js';
 import type { WorkflowLocks } from './lock-manager.js';
 import { recoveryLease, classifyResumeAction, developerRecoveryData, scoutRecoveryData, scopeBaselineRecoveryData, boundedDeveloperRecoveryData } from './recovery-resume.js';
 import type { RecoveryAuthority } from './recovery-resume.js';
@@ -445,11 +446,11 @@ export class CentralOrchestrator {
   }
   async abandonRecovered(ctx:HumanGateChannel,reason:string):Promise<void>{
     if(!this.#recoveryAuthority||!this.#store||this.#state.state!=='BLOCKED'||!validateScalar('Text',reason).ok)throw new Error('RECOVERY_ABANDON_DENIED');
-    this.#cas(this.#state.revision);this.#requireQuiescent();const revision=this.#state.revision;
+    this.#cas(this.#state.revision);this.#requireQuiescent();if(this.#state.candidate)this.#verifyCandidateCurrent();const revision=this.#state.revision;
     if(ctx.sessionManager.getSessionId()!==this.#ownerSessionId)throw new HumanDecisionStaleError('SESSION_CHANGED');
     const source=await requestHumanConfirmation(ctx,`Close attempt ${this.spec.taskId} as incomplete?\nReason: ${reason}\nThe task will be recorded as FAILED. Candidate copies and logs remain preserved. The project objective remains available for a new proposal. No gate is approved.`,"Close this attempt?");
     if(!source)return;
-    this.#cas(revision);this.#requireQuiescent();
+    this.#cas(revision);this.#requireQuiescent();if(this.#state.candidate)this.#verifyCandidateCurrent();
     if(ctx.sessionManager.getSessionId()!==this.#ownerSessionId)throw new HumanDecisionStaleError('SESSION_CHANGED');
     const ref=this.#store.put(`abandon-${randomUUID()}`,canonicalize({schemaVersion:1,taskId:this.spec.taskId,revision,reason,
       decision:'ABANDON',source,sessionId:this.#ownerSessionId,recoveryAuthorityRef:this.#recoveryAuthority.recordRef}),
@@ -496,6 +497,15 @@ export class CentralOrchestrator {
     // A live/uncertain child keeps its incarnation records for verified takeover.
     if(['COMPLETED','FAILED'].includes(this.#state.state)&&this.#state.runs.every(runQuiescent))
       this.#lockManager.releaseAll(this.#locks);
+  }
+  /** Only the native orderly shutdown path may relinquish a nonterminal local task. */
+  releaseOnSessionShutdown(sessionFile:string|undefined):void{
+    if(this.#retired||!this.#store||readProjectCustodian(this.#state.repoRoot)||['COMPLETED','FAILED'].includes(this.#state.state))return;
+    this.#cas(this.#state.revision);this.#requireQuiescent();
+    if(this.#state.candidate)this.#verifyCandidateCurrent();
+    releaseLocalContinuation({store:this.#store,manager:this.#lockManager,locks:this.#locks,sessionFile,
+      assertCurrent:()=>{this.#cas(this.#state.revision);this.#requireQuiescent();if(this.#state.candidate)this.#verifyCandidateCurrent()},
+      retire:()=>{this.#retired=true;this.#writerApproval=undefined;this.#humanRequest=undefined;this.#presentation=undefined}});
   }
   /** A storage failure after publication preserves the accepted result and counters. */
   saveCheckpoint(expectedRevision:number):'LOCAL'|'PORTABLE' {
@@ -1801,7 +1811,7 @@ export class CentralOrchestrator {
   }
   #terminalOptions(assignment:AssignmentEnvelope):ReviewerRunOptions & MemoryRunOptions{
     if(!this.#store)return {};
-    return {...(this.#memoryContexts.has(assignment.assignmentId)?{projectMemory:this.#memoryContexts.get(assignment.assignmentId)}:{}),onDispatchIdentity:identity=>{
+    return {sourceIndexStore:this.#store,...(this.#memoryContexts.has(assignment.assignmentId)?{projectMemory:this.#memoryContexts.get(assignment.assignmentId)}:{}),onDispatchIdentity:identity=>{
       if(!isAcquiredDispatchIdentity(identity)||identity.ownerSessionId!==this.#ownerSessionId||identity.agent!==`controlled.${assignment.role.toLowerCase()}`)
         throw new OrchestratorError('RESULT_ATTRIBUTION_MISMATCH');
       const prior=this.#state.runs.find(run=>run.assignmentId===assignment.assignmentId);

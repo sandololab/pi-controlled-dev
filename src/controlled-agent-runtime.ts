@@ -97,17 +97,7 @@ function protectedMutationPath(cwd:string,path:string):boolean{
 }
 
 export type TreeInventory = ReadonlyMap<string, string>;
-/** Complete discovery metadata for source/configuration paths, never evidence of
- * their behavior or permission to edit. Oversized indexes fail explicitly. */
-export function sourceFileIndex(inventory:TreeInventory):string{
-  const files=[...inventory].filter(([path,kind])=>kind.startsWith('f\t')&&!path.split('/').some(p=>['.git','node_modules','.venv'].includes(p))).map(([path])=>path);
-  const sourceFiles=files.filter(path=>/\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|rs|go|java|kt|c|h|cpp|hpp|cs|rb|sh|md|toml|ini|cfg|yaml|yml)$/i.test(path)||/(?:^|\/)(?:package\.json|Makefile|Cargo\.lock|requirements\.txt)$/.test(path)).sort();
-  const sourceFileBytes=sourceFiles.map(path=>{const size=Number(inventory.get(path)!.split('\t')[2]);return [path,Number.isSafeInteger(size)&&size>=0?size:null] as const});
-  const sourceByteCount=sourceFileBytes.every(([,size])=>size!==null)?sourceFileBytes.reduce((n,[,size])=>n+size!,0):null;
-  const text=JSON.stringify({sourceFiles,sourceFileCount:sourceFiles.length,sourceByteCount,sourceFileBytes,otherFileCount:files.length-sourceFiles.length,sourceIndexComplete:true});
-  if(Buffer.byteLength(text,'utf8')>65536)throw new ControlledRuntimeError('SOURCE_INDEX_LIMIT');
-  return text;
-}
+export {sourceFileIndex} from './source-file-index.js';
 export function inventoryTree(root: string, excludedTopLevel: readonly string[] = [], includedPaths?:ReadonlySet<string>): TreeInventory {
   const absolute = resolve(root);
   if (realpathSync(absolute) !== absolute) throw new ControlledRuntimeError('CANARY_ROOT_NOT_CANONICAL');

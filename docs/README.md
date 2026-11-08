@@ -30,6 +30,10 @@ Start with the user manual. Architecture, protocol and the protocol test matrix 
 
 [Example task specification](examples/controlled-dev-task.example.json) · [Project README](../README.md)
 
+## Current release and Paperclip
+
+Release **0.1.0** uses the same runtime as beta.5, without a prerelease suffix. Read the [Paperclip integration and agent setup guide](integrations/paperclip.md), [changelog](../CHANGELOG.md) and [validation status](VALIDATION.md). Historical release records below keep their original identifiers.
+
 ## Builtin read compatibility correction
 
 The scoped documentation baseline for this change reuses this index, the

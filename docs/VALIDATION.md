@@ -2,7 +2,27 @@
 
 **English** · [Italiano](it/VALIDATION.md)
 
-This is a development beta. Historical campaign reports and current focused checks describe different revisions; earlier broad-suite failures remain explicitly recorded below.
+Current release: **0.1.0**. Historical campaign reports and current focused checks describe different revisions; earlier broad-suite failures remain explicitly recorded below. Removing the prerelease suffix does not change that evidence.
+
+## 0.1.0 numbering and documentation release — 8 November 2026
+
+The runtime is unchanged from 0.1.0-beta.5. The release removes the prerelease
+suffix, aligns manifest/root lockfile and current manual labels, and adds an
+English Paperclip integration guide. Historical tags and campaign identifiers
+retain their original names. No dependency, permission or workflow rule changes.
+
+Release-delta checks: TypeScript checking PASS; both product-package and language
+test files PASS (seven declared cases); relative documentation-link checks PASS;
+`git diff --check` PASS; npm pack dry-run PASS, including the new integration
+guide and excluding tests, installed dependencies, profiles and credentials.
+The commands ran with Node.js 22.22.1. Packaging used a writable temporary npm
+cache after the default cache was unavailable in this environment.
+
+No new model-backed Pi trial or full-suite campaign was run for this metadata/
+documentation change. Existing broad-suite failures and conservative recovery
+limits below remain unresolved; a numbered release does not erase them. The
+Paperclip guide distinguishes native adapter session resume from package dialog
+support and describes a bounded acceptance test rather than claiming it ran here.
 
 ## Beta.5 release preparation — 6 November 2026
 

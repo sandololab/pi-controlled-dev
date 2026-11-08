@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.0] - 2026-11-08
+
+Publish the existing implementation under a release number without a prerelease suffix. Runtime sources, extension, skills, prompts, dependencies and confirmation rules are unchanged from 0.1.0-beta.5. Earlier tags and evidence retain their historical names.
+
+- Update package and lockfile versions, current manual labels and installation examples.
+- Add an English Paperclip integration guide covering package selection, agent configuration, skills, instructions, native terminal confirmations and same-session recovery.
+- Retain the documented broad-suite failures and recovery limitations. This numbering/documentation release does not claim new full-suite acceptance or production qualification.
+
+See [validation status](docs/VALIDATION.md) for checks performed for this release.
+
 ## [0.1.0-beta.5] - 2026-11-06
 
 Development prerelease following the beta.4 package revision. No production

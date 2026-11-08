@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "Manuale utente — versione 0.1.0-beta.5"
+subtitle: "Manuale utente — versione 0.1.0"
 lang: it-IT
 toc-title: Indice
 ---
@@ -14,9 +14,9 @@ La TUI e i prompt inclusi sono in inglese; i nomi dei pulsanti riportati qui cor
 
 pi-controlled-dev è un package per Pi Coding Agent. Ti permette di affidare un lavoro di sviluppo a ruoli distinti, con confini espliciti, verifiche del risultato e conferme richieste a te.
 
-Questo manuale descrive la versione **0.1.0-beta.5**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
+Questo manuale descrive la versione **0.1.0**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
 
-# Stato effettivo di questa beta
+# Stato effettivo della versione
 
 **Disponibile:** menu generale, creazione di nuovi progetti con baseline tecnica vuota, wizard navigabile in cinque passaggi, Scout pre-task read-only, proposta di verifiche senza codice manuale, riepilogo modificabile, viste separate per stato, attività, verifiche e dettagli, recovery spiegata, Project Memory cross-task, Project Planning con dipendenze e revisioni approvate, integrazione Git locale approvata dall’utente, verifica dell’integrazione su commit esatti, conferme nel pannello di Pi e Autonomia controllata entro una policy esplicitamente approvata.
 
@@ -306,7 +306,7 @@ pi list
 
 Questa installazione segue il branch predefinito del repository pubblico. Per fissare una revisione verificata, aggiungi `@COMMIT_SHA` alla sorgente Git, sostituendo il segnaposto con il commit desiderato. Un commit fissato non avanza agli aggiornamenti successivi.
 
-I comandi sono documentati per Pi 1.3.0. Consulta anche lo [stato delle verifiche](VALIDATION.md): questa revisione è una beta di sviluppo con copertura e limiti documentati.
+I comandi sono documentati per Pi 1.3.0. Consulta anche lo [stato delle verifiche](VALIDATION.md): questa versione mantiene copertura e limiti documentati.
 
 ## Aggiorna un'installazione Git
 
@@ -325,7 +325,7 @@ Supponendo che il file ricevuto sia nella directory Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0-beta.5.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.1.0.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list

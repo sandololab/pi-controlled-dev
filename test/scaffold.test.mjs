@@ -25,7 +25,7 @@ const placeholders = modules.filter(path => !['src/run-quiescence.ts','src/legac
 const p4Modules = ['src/runtime-root-mapping.ts', 'src/contract-json.ts', 'src/contract-schema.ts', 'src/contract-semantic.ts', 'src/contract-node.d.ts'];
 const p5Modules = ['src/rpc-node.d.ts', 'src/pi-tui.d.ts'];
 const p6Modules = ['src/scout-node.d.ts', 'src/store-node.d.ts'];
-const domainModules = ['src/workflow-result-store.ts','src/candidate-storage.ts','src/host-command.ts','src/host-command-node.d.ts','src/host-command-recovery.ts','src/workflow-checkpoint.ts','src/workflow-validation.ts','src/human-gate-display.ts','src/git-project-identity.ts','src/role-executor.ts','src/bounded-developer-checkpoint.ts','src/developer-baseline.ts','src/development-profile.ts','src/host-api.ts','src/project-custodian.ts','src/project-storage.ts','src/project-handoff.ts','src/candidate-checkpoints.ts','src/runtime-root-binding.ts','src/project-runtime-import.ts','src/verified-store-cache.ts','src/verified-store-cache-node.d.ts'];
+const domainModules = ['src/external-human-channel.ts','src/workflow-result-store.ts','src/candidate-storage.ts','src/host-command.ts','src/host-command-node.d.ts','src/host-command-recovery.ts','src/workflow-checkpoint.ts','src/workflow-validation.ts','src/human-gate-display.ts','src/git-project-identity.ts','src/role-executor.ts','src/bounded-developer-checkpoint.ts','src/developer-baseline.ts','src/development-profile.ts','src/host-api.ts','src/project-custodian.ts','src/project-storage.ts','src/project-handoff.ts','src/candidate-checkpoints.ts','src/runtime-root-binding.ts','src/project-runtime-import.ts','src/verified-store-cache.ts','src/verified-store-cache-node.d.ts'];
 const entry = 'extensions/controlled-dev.ts';
 const releaseModules = ['src/local-continuation.ts', 'src/source-file-index.ts'];
 const agents = ['scout', 'developer', 'reviewer', 'oracle'].map((name) => `agents/${name}.md`);
@@ -58,7 +58,8 @@ const bilingualDocs = [
   "docs/it/USER-MANUAL.md",
   "docs/it/VALIDATION.md"
 ];
-const expected = ['docs/CANDIDATE-STORAGE.md','docs/it/CANDIDATE-STORAGE.md','test/candidate-storage.test.mjs','docs/RELIABILITY-PLAN.md','docs/it/RELIABILITY-PLAN.md','test/host-command.test.mjs','test/host-command-recovery.test.mjs','test/workflow-checkpoint.test.mjs','test/candidate-read-reuse.test.mjs','test/review-preparation.test.mjs',
+const paperclipAssets = ['README.md','client.mjs','controller.mjs','conversation.mjs','daemon.mjs','protocol.mjs','worker.mjs'].map(name=>'integrations/paperclip/'+name);
+const expected = [...paperclipAssets,'test/external-human-paperclip.test.mjs','test/paperclip-daemon.test.mjs','test/paperclip-conversation.test.mjs','test/paperclip-worker.test.mjs','docs/CANDIDATE-STORAGE.md','docs/it/CANDIDATE-STORAGE.md','test/candidate-storage.test.mjs','docs/RELIABILITY-PLAN.md','docs/it/RELIABILITY-PLAN.md','test/host-command.test.mjs','test/host-command-recovery.test.mjs','test/workflow-checkpoint.test.mjs','test/candidate-read-reuse.test.mjs','test/review-preparation.test.mjs',
   ...bilingualDocs, 'test/language.test.mjs', ...releaseModules,
   '.github/workflows/ci.yml', 'CHANGELOG.md', 'docs/integrations/paperclip.md', 'test/local-continuation.test.mjs',
   'test/proposal-waiting-ux.test.mjs','test/project-opening-preview.test.mjs','test/developer-baseline.test.mjs',
@@ -257,7 +258,7 @@ test('P2-TEST-005 — package metadata and archive inventory', () => {
   const packed = JSON.parse(run('npm', ['pack', '--dry-run', '--json', '--ignore-scripts']).stdout);
   const archive = Array.isArray(packed) ? packed[0] : Object.values(packed)[0];
   assert.deepEqual(archive.files.map(({ path }) => path).sort(),
-    [...expected.filter(path=>path.startsWith('docs/')),...domainModules, ...releaseModules, 'package.json', 'README.md', 'USER-MANUAL.md', 'CHANGELOG.md', entry, ...modules, ...p4Modules, ...p5Modules, ...p6Modules, ...agents, ...skills, ...prompts].sort());
+    [...paperclipAssets,...expected.filter(path=>path.startsWith('docs/')),...domainModules, ...releaseModules, 'package.json', 'README.md', 'USER-MANUAL.md', 'CHANGELOG.md', entry, ...modules, ...p4Modules, ...p5Modules, ...p6Modules, ...agents, ...skills, ...prompts].sort());
 });
 
 test('P2-TEST-006 — new files contain no machine-local paths', () => {

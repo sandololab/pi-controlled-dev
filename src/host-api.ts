@@ -2,3 +2,6 @@
 export { createControlledDevExtension } from '../extensions/controlled-dev.js';
 export { DEVELOPMENT_PHASES, resolveDevelopmentProfile } from './development-profile.js';
 export type { DevelopmentPhase, DevelopmentProfile, ResolvedDevelopmentProfile } from './development-profile.js';
+
+export { createExternalHumanContext } from './external-human-channel.js';
+export type { ExternalHumanRequest, ExternalHumanResponse } from './external-human-channel.js';

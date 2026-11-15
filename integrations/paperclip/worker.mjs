@@ -34,7 +34,11 @@ const settingsManager=config.packages?sdk.SettingsManager.inMemory({defaultProvi
 const bus=sdk.createEventBus(),loader=new sdk.DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,...(settingsManager?{settingsManager}:{}),eventBus:bus,noContextFiles:true});
 await loader.reload();const loaded=loader.getExtensions();if(loaded.errors.length)throw Error('BRIDGE_EXTENSION_LOAD_FAILED: '+loaded.errors.map(e=>e.error).join(';'));
 ({session}=await sdk.createAgentSession({cwd:process.cwd(),...(settingsManager?{settingsManager}:{}),resourceLoader:loader,sessionManager:sdk.SessionManager.create(process.cwd(),config.sessionDirectory)}));
-await session.bindExtensions({mode:'rpc',uiContext:ui,onError:e=>emit({type:'runtime-error',error:redact(e.error)})});
+let nativeShutdownError=null;
+await session.bindExtensions({mode:'rpc',uiContext:ui,onError:e=>{
+ if(e.event==='session_shutdown')nativeShutdownError=redact(e.error);
+ emit({type:'runtime-error',error:redact(e.error)});
+}});
 if(session.model?.provider!==config.model.provider||session.model?.id!==config.model.id)throw Error('BRIDGE_MODEL_MISMATCH');
 const actual=session.extensionRunner.createCommandContext();
 context={...actual,ui,hasUI:true,mode:'external-human'};
@@ -78,9 +82,11 @@ while(alive){
  else if(message.type==='stop'){
   alive=false;for(const q of pending.values())q.reject(Error('BRIDGE_STOPPED'));
   try{
+   nativeShutdownError=null;
    await session.abort();
    // Pi dispose() invalidates contexts; native shutdown hooks must finish first.
    await session.extensionRunner.emit({type:'session_shutdown',reason:'exit'});
+   if(nativeShutdownError!==null)throw Error(nativeShutdownError);
    context.disposeHumanChannel?.();session.dispose();
    await new Promise(resolve=>process.stdout.write(JSON.stringify(seal(key,{type:'stopped',clean:true}))+'\n',resolve));
    lines.close();process.exit(0);

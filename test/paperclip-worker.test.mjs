@@ -11,7 +11,7 @@ import {randomBytes} from 'node:crypto';
 import {seal,verify} from '../integrations/paperclip/protocol.mjs';
 
 // A declared SDK lifecycle double, not evidence of a real human response.
-for(const blocked of [false,true])test('worker stop awaits native shutdown and '+(blocked?'preserves a blocked shutdown':'acknowledges only clean disposal'),{timeout:15000},async t=>{
+for(const blocked of [false,'throw','reported'])test('worker stop awaits native shutdown and '+(blocked?'preserves a blocked shutdown via '+blocked:'acknowledges only clean disposal'),{timeout:15000},async t=>{
  const root=mkdtempSync(join(tmpdir(),'paperclip-worker-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  const sdk=join(root,'sdk.mjs');
  writeFileSync(sdk,`
@@ -20,13 +20,14 @@ for(const blocked of [false,true])test('worker stop awaits native shutdown and '
  export const createEventBus=()=>({emit(name,q){if(name==='controlled-dev:human-host-context:v1')q.result={...q.context,disposeHumanChannel(){}}}});
  export class DefaultResourceLoader{async reload(){}getExtensions(){return {errors:[],extensions:[]}}}
  export async function createAgentSession({settingsManager,sessionManager}){
-  let ui;
+  let ui,onError;
   const session={model:{provider:settingsManager.defaultProvider,id:settingsManager.defaultModel},sessionManager,
-   async bindExtensions(bindings){ui=bindings.uiContext},getActiveToolNames:()=>['read'],async abort(){},
+   async bindExtensions(bindings){ui=bindings.uiContext;onError=bindings.onError},getActiveToolNames:()=>['read'],async abort(){},
    extensionRunner:{createCommandContext:()=>({sessionManager}),async emit(event){
     if(event.type!=='session_shutdown')throw Error('unexpected event');
     await new Promise(r=>setTimeout(r,30));ui.notify('fixture-native-shutdown');
-    if(${blocked})throw Error('ORCHESTRATOR_BLOCKED');
+    if(${JSON.stringify(blocked)}==='throw')throw Error('ORCHESTRATOR_BLOCKED');
+    if(${JSON.stringify(blocked)}==='reported')onError({event:'session_shutdown',error:'ORCHESTRATOR_BLOCKED'});
    }},dispose(){ui.notify('fixture-native-dispose')}};
   return {session};
  }

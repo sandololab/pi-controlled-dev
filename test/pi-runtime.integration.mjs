@@ -63,11 +63,18 @@ test('installed Pi and pi-subagents expose parent boundary and diagnose an actua
  });
 });
 
-test('real Pi SDK worker keeps native status and acknowledges orderly shutdown without a model request',{timeout:60000},async t=>{
+for(const blocked of [false,true])test('real Pi SDK worker keeps native status and '+(blocked?'rejects a shutdown error reported by the SDK':'acknowledges orderly shutdown')+' without a model request',{timeout:60000},async t=>{
  const host=process.env.PI_TEST_HOST_ROOT,provider=process.env.PI_TEST_SUBAGENTS_ROOT;
  assert.ok(host&&provider,'Set PI_TEST_HOST_ROOT and PI_TEST_SUBAGENTS_ROOT.');
  const root=mkdtempSync(join(tmpdir(),'paperclip-native-')),profile=join(root,'profile'),repo=join(root,'repo');
  mkdirSync(profile);mkdirSync(repo);writeFileSync(join(repo,'README.md'),'Synthetic native transport probe\n');
+ const packages=[fileURLToPath(new URL('../',import.meta.url)),resolve(provider)];
+ if(blocked){
+  const fixturePackage=join(root,'shutdown-package');mkdirSync(fixturePackage);
+  writeFileSync(join(fixturePackage,'package.json'),JSON.stringify({name:'fixture-shutdown',pi:{extensions:['./index.mjs']}}));
+  writeFileSync(join(fixturePackage,'index.mjs'),"export default pi=>pi.on('session_shutdown',()=>{throw Error('FIXTURE_SHUTDOWN_BLOCKED')});\n");
+  packages.push(fixturePackage);
+ }
  const git=(...args)=>execFileSync('git',['-C',repo,...args],{stdio:'pipe'});
  git('init','-q');git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture');
  writeFileSync(join(profile,'models.json'),JSON.stringify({providers:{'fixture-local':{baseUrl:'http://127.0.0.1:9/v1',api:'openai-completions',apiKey:'fixture-only',models:[{id:'fixture',name:'Fixture',reasoning:false,input:['text'],contextWindow:32768,maxTokens:1024,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]}}}));
@@ -80,12 +87,14 @@ test('real Pi SDK worker keeps native status and acknowledges orderly shutdown w
   if(v.type==='ready')child.stdin.write(JSON.stringify(seal(key,{type:'command',name:'controlled-dev',args:'status --technical',commandId:'fixture-status'}))+'\n');
   if(v.type==='command-finished'||v.type==='command-failed')child.stdin.write(JSON.stringify(seal(key,{type:'stop'}))+'\n');
  });
- child.stdin.write(JSON.stringify({type:'bootstrap',key,config:{sdkEntry:join(resolve(host),'dist/index.js'),profile:'sviluppo',sessionDirectory:join(root,'sessions'),packages:[fileURLToPath(new URL('../',import.meta.url)),resolve(provider)],model:{provider:'fixture-local',id:'fixture'}}})+'\n');
- const [code,signal]=await exited;assert.equal(signal,null,stderr);assert.equal(code,0,stderr);
+ child.stdin.write(JSON.stringify({type:'bootstrap',key,config:{sdkEntry:join(resolve(host),'dist/index.js'),profile:'sviluppo',sessionDirectory:join(root,'sessions'),packages,model:{provider:'fixture-local',id:'fixture'}}})+'\n');
+ const [code,signal]=await exited;assert.equal(signal,null,stderr);assert.equal(code,blocked?1:0,stderr);
  const ready=events.find(e=>e.type==='ready');assert.deepEqual(ready.model,{provider:'fixture-local',id:'fixture'});assert.deepEqual(ready.commands,['controlled-dev']);
- assert.equal(events.some(e=>['runtime-error','command-failed','human-request','stop-failed'].includes(e.type)),false,JSON.stringify(events));
+ assert.equal(events.some(e=>['command-failed','human-request'].includes(e.type)),false,JSON.stringify(events));
  const status=events.find(e=>e.type==='command-finished');assert.equal(status.nativeStatus.completed,false);assert.equal(status.nativeStatus.integrationNotInferred,true);
  const technical=events.filter(e=>e.type==='notice').map(e=>{try{return JSON.parse(e.text)}catch{return null}}).find(e=>e?.hostCommand==='controlled-dev');
  assert.equal(technical.mode,'external-human');assert.equal(technical.sessionBound,true);assert.equal(technical.runtimeAvailable,true);
- assert.equal(events.at(-1).type,'stopped');assert.equal(events.at(-1).clean,true);
+ assert.equal(events.at(-1).type,blocked?'stop-failed':'stopped');
+ if(blocked){assert.match(events.at(-1).error,/FIXTURE_SHUTDOWN_BLOCKED/);assert.equal(events.some(e=>e.type==='runtime-error'&&e.error==='FIXTURE_SHUTDOWN_BLOCKED'),true)}
+ else assert.equal(events.at(-1).clean,true);
 });

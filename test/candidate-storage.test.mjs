@@ -14,6 +14,7 @@ const {withProjectWorkspaceLease}=await import('../src/lock-manager.ts');
 const h=await import('../src/project-handoff.ts');
 const c=await import('../src/candidate-storage.ts');
 const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
+const {createExternalHumanContext}=await import('../src/external-human-channel.ts');
 const git=(repo,...args)=>execFileSync('git',['-C',repo,...args],{encoding:'utf8'}).trim();
 const ctx=(repo,yes=true)=>({mode:'tui',cwd:repo,sessionManager:{getSessionId:()=> 'native-storage-fixture'},ui:{notify(){},confirm:async()=>yes}});
 async function fixture(t){
@@ -33,9 +34,15 @@ async function fixture(t){
 }
 const noop=async()=>{};
 async function prepare(f){const p=await c.prepareCandidateStorageReduction(f.repo,f.data,noop);const request=c.candidateStorageReductionRequest(p),receipt=await presentTrustedConfirmation(ctx(f.repo),request);return{p,request,receipt}}
-test('native maintenance shares old payloads, reseals, and survives relocation to an empty profile',async t=>{
+for(const mode of ['tui','external-human'])test('native maintenance shares old payloads, reseals, and survives relocation to an empty profile through '+mode,async t=>{
  const f=await fixture(t),{reduceProductionProjectStorage}=await import('../src/production-bridge.ts'),old=process.env.PI_CODING_AGENT_DIR;process.env.PI_CODING_AGENT_DIR=f.data;t.after(()=>old===undefined?delete process.env.PI_CODING_AGENT_DIR:process.env.PI_CODING_AGENT_DIR=old);
- const plan=readFileSync(join(f.receiptStore.root,'artifacts','original-plan')),head=f.helper.head();await reduceProductionProjectStorage(ctx(f.repo));
+ const plan=readFileSync(join(f.receiptStore.root,'artifacts','original-plan')),head=f.helper.head();
+ let channel=ctx(f.repo);
+ if(mode==='external-human'){
+  await assert.rejects(reduceProductionProjectStorage({...channel,mode}),/HUMAN_CHANNEL_UNAVAILABLE/);
+  channel=createExternalHumanContext(channel,async q=>({accepted:true,requestDigest:q.digest,provider:'declared-test-double',interactionId:'storage-fixture',actorUserId:'fixture-user'}));
+ }
+ await reduceProductionProjectStorage(channel);
  const release=h.readProjectHandoffForRuntimeImport(f.repo);assert.equal(release.record.ownerDisposition,'RELEASED_FOR_TRANSFER');assert.equal(f.helper.head(),head);assert.deepEqual(readFileSync(join(f.receiptStore.root,'artifacts','original-plan')),plan);
  for(const s of f.snapshots){assert.equal(existsSync(join(s.snapshot,'objects')),false);assert.ok(existsSync(join(s.snapshot,'storage.json')));assert.equal(readFileSync(join(s.snapshot,'manifest.json'),'utf8'),canonicalize(s.manifest))}
  assert.equal(readdirSync(join(f.repo,'.controlled-dev','candidates','.objects')).length,3);

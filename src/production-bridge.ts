@@ -140,7 +140,7 @@ export function requestProductionStoragePause():boolean {
 /** Maintenance changes only verified snapshot containers, then publishes a fresh
  * transfer seal. No task state, history, budget or role is replayed. */
 export async function reduceProductionProjectStorage(ctx:ProductionCommandContext):Promise<void>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId())throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
   if(storagePause)throw new Error('CANDIDATE_STORAGE_BUSY');
   const storage=resolveProjectStorage(configRoot(),realpathSync(ctx.cwd));
   if(!storage.custodian)throw new Error('PROJECT_HANDOFF_NOT_ADOPTED');

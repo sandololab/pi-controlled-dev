@@ -78,6 +78,8 @@ export class PaperclipHumanClient{
   const revision=request.kind==='confirm'?current.payload.target.revisionId:current.payload.questions[0].helpText.split(' / revisione: ').at(-1);
   if(document.latestRevisionId!==revision)throw Error('PAPERCLIP_STALE_TARGET');
   if(request.kind==='confirm'&&document.id!==current.payload.target.documentId)throw Error('PAPERCLIP_TARGET_MISMATCH');
+  // Recheck assignment at response consumption, not only at the controller tick.
+  await this.identity();
   if(current.status==='pending')return null;
   if(!['accepted','answered','rejected'].includes(current.status))return {cancelled:true,reason:current.status};
   if(typeof current.resolvedByUserId!=='string'||!current.resolvedByUserId||current.resolvedByAgentId||current.resolvedByRunId||!current.resolvedAt)throw Error('PAPERCLIP_HUMAN_RESOLVER_REQUIRED');

@@ -88,6 +88,11 @@ test('Paperclip agent resolution, changed document, wrong company and widened re
   await assert.rejects(f.client.read(row,q),/HUMAN_RESOLVER_REQUIRED|PRESENTATION_MISMATCH|HUMAN_POLICY_REQUIRED/);
  }
 });
+test('a reassignment while a human card is pending invalidates its answer before native delivery',async()=>{
+ const f=fakePaperclip(),q=nativeRequest();await f.client.identity();const row=await f.client.publish('job',q);f.accept(f.interactions[0]);
+ await f.client.api('PATCH','/issues/issue',{assigneeAgentId:'another-agent'});
+ await assert.rejects(f.client.read(row,q),/PAPERCLIP_ASSIGNMENT_MISMATCH/);
+});
 test('expired/rejected Paperclip requests never become accepted native decisions',async()=>{
  const f=fakePaperclip(),q=nativeRequest();await f.client.identity();const row=await f.client.publish('job',q);
  f.interactions[0].status='expired';assert.equal((await f.client.read(row,q)).cancelled,true);

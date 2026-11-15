@@ -27,6 +27,7 @@ const p5Modules = ['src/rpc-node.d.ts', 'src/pi-tui.d.ts'];
 const p6Modules = ['src/scout-node.d.ts', 'src/store-node.d.ts'];
 const domainModules = ['src/workflow-result-store.ts','src/candidate-storage.ts','src/host-command.ts','src/host-command-node.d.ts','src/host-command-recovery.ts','src/workflow-checkpoint.ts','src/workflow-validation.ts','src/human-gate-display.ts','src/git-project-identity.ts','src/role-executor.ts','src/bounded-developer-checkpoint.ts','src/developer-baseline.ts','src/development-profile.ts','src/host-api.ts','src/project-custodian.ts','src/project-storage.ts','src/project-handoff.ts','src/candidate-checkpoints.ts','src/runtime-root-binding.ts','src/project-runtime-import.ts','src/verified-store-cache.ts','src/verified-store-cache-node.d.ts'];
 const entry = 'extensions/controlled-dev.ts';
+const releaseModules = ['src/local-continuation.ts', 'src/source-file-index.ts'];
 const agents = ['scout', 'developer', 'reviewer', 'oracle'].map((name) => `agents/${name}.md`);
 const skills = ['repository-analysis','validation-planning','controlled-review','task-planning','recovery-explanation','runtime-observability','scenario-management','evidence-management','software-design-quality','project-memory','project-planning','greenfield-bootstrap'].map(name=>`skills/${name}/SKILL.md`);
 const prompts = ['controlled-dev-task','controlled-dev-recovery','controlled-dev-result'].map(name=>`prompts/${name}.md`);
@@ -58,7 +59,8 @@ const bilingualDocs = [
   "docs/it/VALIDATION.md"
 ];
 const expected = ['docs/CANDIDATE-STORAGE.md','docs/it/CANDIDATE-STORAGE.md','test/candidate-storage.test.mjs','docs/RELIABILITY-PLAN.md','docs/it/RELIABILITY-PLAN.md','test/host-command.test.mjs','test/host-command-recovery.test.mjs','test/workflow-checkpoint.test.mjs','test/candidate-read-reuse.test.mjs','test/review-preparation.test.mjs',
-  ...bilingualDocs, 'test/language.test.mjs',
+  ...bilingualDocs, 'test/language.test.mjs', ...releaseModules,
+  '.github/workflows/ci.yml', 'CHANGELOG.md', 'docs/integrations/paperclip.md', 'test/local-continuation.test.mjs',
   'test/proposal-waiting-ux.test.mjs','test/project-opening-preview.test.mjs','test/developer-baseline.test.mjs',
   ...domainModules,'docs/SYSTEMIST-COMPOSITION.md','test/development-profile.test.mjs','test/contract-cache.test.mjs','test/scout-clarification-integration.test.mjs','test/candidate-git-batch.test.mjs','test/scout-clarifications.test.mjs','test/context-investigation.test.mjs','test/context-investigation-persistence.test.mjs','test/project-plan-consultation.test.mjs','test/project-shortcuts.test.mjs',
   'test/candidate-python-validation.test.mjs','test/candidate-git-filemode.test.mjs',
@@ -230,7 +232,7 @@ test('P2-TEST-004 — only four controlled roles are operational; markdown profi
 
 test('P2-TEST-005 — package metadata and archive inventory', () => {
   assert.equal(manifest.name, 'pi-controlled-dev');
-  assert.match(manifest.version, /^0\.1\.0-beta\.\d+$/);
+  assert.match(manifest.version, /^0\.1\.0(?:-beta\.\d+)?$/);
   const lock=JSON.parse(read('package-lock.json'));assert.equal(lock.version,manifest.version);assert.equal(lock.packages[''].version,manifest.version);
   assert.equal(manifest.type, 'module');
   assert.equal(manifest.private, true); // npm publication stays disabled; GitHub is public.
@@ -255,7 +257,7 @@ test('P2-TEST-005 — package metadata and archive inventory', () => {
   const packed = JSON.parse(run('npm', ['pack', '--dry-run', '--json', '--ignore-scripts']).stdout);
   const archive = Array.isArray(packed) ? packed[0] : Object.values(packed)[0];
   assert.deepEqual(archive.files.map(({ path }) => path).sort(),
-    [...expected.filter(path=>path.startsWith('docs/')),...domainModules, 'package.json', 'README.md', 'USER-MANUAL.md', entry, ...modules, ...p4Modules, ...p5Modules, ...p6Modules, ...agents, ...skills, ...prompts].sort());
+    [...expected.filter(path=>path.startsWith('docs/')),...domainModules, ...releaseModules, 'package.json', 'README.md', 'USER-MANUAL.md', 'CHANGELOG.md', entry, ...modules, ...p4Modules, ...p5Modules, ...p6Modules, ...agents, ...skills, ...prompts].sort());
 });
 
 test('P2-TEST-006 — new files contain no machine-local paths', () => {

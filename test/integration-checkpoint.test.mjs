@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {integratedFixture,integrate,Checkpoints,Promotion,inspect,channel,git,api,checkpointReviewer,presentTrustedConfirmation} from './integration-checkpoint-fixture.mjs';
+import {integratedFixture,integrate,Checkpoints,Promotion,inspect,channel,git,api,checkpointReviewer,presentTrustedConfirmation,resolver} from './integration-checkpoint-fixture.mjs';
 const model=await import('../src/integration-checkpoint.ts');
 const {STATES,TRANSITIONS}=await import('../src/state-machine.ts');
-const resolver=name=>name==='node'?process.execPath:'/usr/bin/'+name;
 test('Checkpoint — real P1/P2 promotions and exact integrated M2, rerun and dirty primary',async t=>{
   const f=await integratedFixture({planning:true});assert.notEqual(f.m1,f.m2);
   const d=f.checkpoints.propose(f.proposal,resolver);assert.equal(d.status,'DRAFT');

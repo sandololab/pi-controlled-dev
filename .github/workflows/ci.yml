@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.22.1'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.22.1'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the system Python test dependency used by native fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes python3-pytest
+          /usr/bin/python3 -c 'import pytest; print(pytest.__version__)'
+      - name: Remove preinstalled LFS drivers from disposable runner defaults
+        run: |
+          if git config --system --get-regexp '^filter\.lfs\.' >/dev/null; then
+            sudo git config --system --remove-section filter.lfs
+          fi
+          if git config --global --get-regexp '^filter\.lfs\.' >/dev/null; then
+            git config --global --remove-section filter.lfs
+          fi
+          if git config --name-only --get-regexp '^(filter\..*\.(clean|smudge|process)|merge\..*\.driver|core\.fsmonitor)$'; then
+            echo 'Unexpected executable Git driver in the test runner configuration' >&2
+            exit 1
+          fi
+      - name: Run the complete portable suite with four isolated file workers
+        env:
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/controlled-dev-ci-profile
+        run: |
+          mkdir -p "$PI_CODING_AGENT_DIR"
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+          const args = JSON.parse(readFileSync('package.json', 'utf8')).scripts.test.trim().split(/\s+/);
+          if (args.shift() !== 'node') throw new Error('Expected the portable Node test command');
+          const concurrency = args.indexOf('--test-concurrency=1');
+          if (concurrency < 0) throw new Error('Expected an explicit portable test concurrency');
+          args[concurrency] = '--test-concurrency=4';
+          const result = spawnSync(process.execPath, args, { stdio: 'inherit' });
+          if (result.error) throw result.error;
+          process.exit(result.status ?? 1);
+          JS

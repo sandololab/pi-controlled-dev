@@ -155,7 +155,7 @@ test('P14F.4 command records typed failure without parent fallback and retains U
   assert.deepEqual(status.locks,{taskLockHeld:true,workspaceLockHeld:true});
   for(const toolName of ['subagents_enable','subagent_supervisor','write','edit','bash'])assert.equal(handlers.get('tool_call')[0]({toolName}).block,true);
   await command('run',ctx);assert.equal(attempts,1);await command('status --technical',ctx);assert.equal(JSON.parse(messages.at(-1)).lastFailure.code,'WORKFLOW_ALREADY_ACTIVE');
-  for(const fn of handlers.get('session_shutdown'))fn({},ctx);
+  for(const fn of handlers.get('session_shutdown'))await assert.rejects(fn({},ctx),/ORCHESTRATOR_BLOCKED/);
 });
 
 test('P14F.3 clean target admits external input and ScopeGuard with no local control files',t=>{

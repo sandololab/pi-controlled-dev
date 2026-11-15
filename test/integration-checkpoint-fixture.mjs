@@ -1,11 +1,13 @@
 import {readFileSync,writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {completedFixture,Promotion,inspect,channel,git,api,reviewerDouble} from './candidate-promotion-fixture.mjs';
 export {Promotion,inspect,channel,git,api};
 export const {IntegrationCheckpointRepository:Checkpoints}=await import('../src/integration-checkpoint-repository.ts');
 export const {DurableStore}=await import('../src/store.ts');
 export const {presentTrustedConfirmation}=await import('../src/trusted-confirmation.ts');
-export const resolver=name=>name==='node'?process.execPath:git('/tmp','--exec-path')&&'/usr/bin/'+name;
+// setup-node installs npm beside its selected Node binary, outside /usr/bin.
+const npmExecutable=join(dirname(process.execPath),'npm');
+export const resolver=name=>name==='node'?process.execPath:name==='npm'?npmExecutable:git('/tmp','--exec-path')&&'/usr/bin/'+name;
 const part1='exports.a = () => 2;\n',part2=part1+'exports.b = () => 3;\n';
 const configuration=({repo,spec})=>{
   if(!readFileSafe(join(repo,'package.json'))){
@@ -17,7 +19,7 @@ const configuration=({repo,spec})=>{
     git(repo,'add','.');git(repo,'commit','-qm','fixture integration tests');
   }
   spec.validationCommands=[{schemaVersion:1,id:'validation-1',executable:'/usr/bin/git',argv:['diff','--check'],timeoutMs:120000,required:true},
-    {schemaVersion:1,id:'validation-2',executable:'/usr/bin/npm',argv:['test'],timeoutMs:120000,required:true}];
+    {schemaVersion:1,id:'validation-2',executable:npmExecutable,argv:['test'],timeoutMs:120000,required:true}];
   spec.acceptanceCriteria=spec.acceptanceCriteria.map(c=>({...c,commandIds:['validation-2']}));
 };
 function readFileSafe(path){try{return readFileSync(path,'utf8')}catch{return}}

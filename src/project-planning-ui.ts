@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { productionAutonomy } from './project-autonomy-production.js';
 import { approvePlanAndAutonomy } from './project-autonomy-ui.js';
 import { IntegrationCheckpointRepository } from './integration-checkpoint-repository.js';
@@ -31,8 +32,8 @@ export function projectStatus(repo:ProjectPlanningRepository):string{
 }
 /** Consultation has no Scout, task creation, note regeneration or approval boundary. */
 export async function consultProjectPlan(ctx:ProductionCommandContext,repo:ProjectPlanningRepository):Promise<void>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
-  const session=ctx.sessionManager.getSessionId(),check=()=>{if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  const session=ctx.sessionManager.getSessionId(),check=()=>{if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
   const panel={section:"Consult the plan",scrollWithArrows:true};
   while(true){
     const plan=repo.current();
@@ -58,8 +59,8 @@ export async function consultProjectPlan(ctx:ProductionCommandContext,repo:Proje
  * always goes through the same trusted host boundary. Starting only invokes normal task formulation. */
 export async function showProjectPlanning(ctx:ProductionCommandContext,repo:ProjectPlanningRepository,scout:PreTaskScout|undefined,memory:ProjectMemoryRepository|undefined,
   command:string,start:(seed:PlannedTaskSeed)=>Promise<void>,checkIntegration?:()=>Promise<void>):Promise<void>{
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
-  const session=ctx.sessionManager.getSessionId(),check=()=>{if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  const session=ctx.sessionManager.getSessionId(),check=()=>{if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
   let contextMemory=memory??ProjectMemoryRepository.open(repo.store.agentDataRoot,repo.repoRoot,repo.store.artifactInspection);
   const panel={section:"Project plan",scrollWithArrows:true};
   if(['consult','view'].includes(command)){await consultProjectPlan(ctx,repo);check();return}

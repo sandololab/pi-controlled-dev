@@ -1,3 +1,4 @@
+import { hasHumanChannel } from './external-human-channel.js';
 import { chooseAction, withProgress, errorPresentation } from './controlled-ui.js';
 import { checkpointCommands } from './integration-checkpoint.js';
 import type { IntegrationCheckpointRepository } from './integration-checkpoint-repository.js';
@@ -90,8 +91,8 @@ ${run.outcome!=='PASS'?humanReason:''}\n\nEvidence\n${run.evidenceRefs.length} p
 /** Explicit TUI only. Models propose intent; the host detects existing closed recipes at the
  * exact commit. A native receipt approves the immutable Definition, never free shell text. */
 export async function showIntegrationCheckpoints(ctx:ProductionCommandContext,repo:IntegrationCheckpointRepository,reviewer?:ControlledReviewerRunner):Promise<void> {
-  if(ctx.mode!=='tui'||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
-  const session=ctx.sessionManager.getSessionId(),check=()=>{if(ctx.mode!=='tui'||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
+  if(!hasHumanChannel(ctx)||!ctx.sessionManager.getSessionId()||!ctx.ui.select)throw new Error('HUMAN_CHANNEL_UNAVAILABLE');
+  const session=ctx.sessionManager.getSessionId(),check=()=>{if(!hasHumanChannel(ctx)||ctx.sessionManager.getSessionId()!==session)throw new Error('HUMAN_CHANNEL_UNAVAILABLE')};
   const panel={section:"Integration verification",scrollWithArrows:true};
   const details=async(d:IntegrationCheckpointDefinition,b:IntegrationBaselineReference,run?:IntegrationCheckpointRun)=>{await chooseAction(ctx.ui,"Technical details",checkpointTechnicalDetails(d,b,run),["Back to summary"],undefined,panel);check()};
   const reviewProposal=async(d:IntegrationCheckpointDefinition,b:IntegrationBaselineReference,start:boolean)=>{

@@ -940,7 +940,7 @@ test('temporary diagnostic instrumentation residue blocks completion even when v
 test('P15 E2E-09 integration: candidate fault reaches production ScopeGuard, not a standalone guard call',async t=>{
   const {installP15ScopeFault,default:negativeHostProbe}=await import('./p15-negative-host-probe.ts');
   const commands=[];
-  negativeHostProbe({on(){},registerCommand(name){commands.push(name)}});
+  negativeHostProbe({on(){},events:{on(){return()=>{}},emit(){}},registerCommand(name){commands.push(name)}});
   assert.deepEqual(commands,['controlled-dev'],'The probe must load production in its own module graph, not a separate extension');
   const {inventoryHash,inventoryTree}=await import('../src/controlled-agent-runtime.ts');
   const {o,store,repo,work,data,git}=await readyGateWorkflow(t,false,'p15-real-scope-negative',false,false,false,[],[],true);

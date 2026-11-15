@@ -1,6 +1,6 @@
 # Paperclip integration and agent setup
 
-This guide covers **pi-controlled-dev 0.1.0**, with the same runtime as 0.1.0-beta.5. It describes configuration and existing interfaces, not a Paperclip plugin, a new bridge or a replacement session manager.
+This guide covers **pi-controlled-dev 0.1.0**, with the same runtime as 0.1.0-beta.5. It describes configuration, existing interfaces and the optional [Paperclip human transport](../../integrations/paperclip/README.md). The transport hosts a live native Pi session and retains its confirmation/recovery boundaries; it requires explicit host configuration and separate real human acceptance before production adoption.
 
 ## Choose the right tool
 
@@ -14,7 +14,7 @@ Paperclip owns the company assignment, assignee, dependencies, external approval
 | --- | --- | --- |
 | Paperclip agent operating Pi in a persistent terminal | An installed Paperclip adapter for the operator agent, plus an already authorized terminal tool capable of opening, reading and interacting with the same Pi TUI | The operator submits the actual native dialog under its mandate; decisions reserved to a person are shown to that person |
 | Paperclip running Pi directly | The installed Paperclip Pi adapter/runner, project directory, explicit model and instructions | Verify extension discovery and each required interactive operation; session resume alone does not prove dialog support |
-| Programmatic host composition | The package's existing host API and a verified confirmation channel | Implement against the documented host contract; this is integration development, not an installation prerequisite or a ready-made Paperclip connector |
+| Programmatic host composition | The package's existing host API and a verified confirmation channel | Implement against the documented host contract; this is integration development, not an installation prerequisite; the optional human transport is a host composition that still needs deployment qualification |
 
 The terminal path has completed a real task through orderly same-session recovery, Developer, checks and internal Reviewer. It requires an actual terminal tool in the agent's environment. Neither this package nor Paperclip's ordinary shell configuration automatically supplies an interactive terminal MCP service.
 

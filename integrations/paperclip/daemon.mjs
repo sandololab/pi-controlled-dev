@@ -40,7 +40,7 @@ readline.createInterface({input:child.stdout,crlfDelay:Infinity}).on('line',line
  }else if(v.type==='stop-failed'){
   state.phase='failed';state.error=v.error;event(v);
  }else if(v.type==='command-finished'||v.type==='command-failed'){
-  pauseClock();state.phase=v.type==='command-finished'?'idle':'failed';state.lastCommand=v;state.pending=null;card=null;event(v);
+  pauseClock();if(!['stopping','stopped'].includes(state.phase))state.phase=v.type==='command-finished'?'idle':'failed';state.lastCommand=v;state.pending=null;card=null;event(v);
  }else event(v);
 });
 let stderrBytes=0;child.stderr.on('data',b=>{if(stderrBytes>32768)return;const text=redact(b.toString());stderrBytes+=b.length;fs.appendFileSync(path.join(directory,'worker.log'),text,{mode:0o600});});
@@ -106,7 +106,10 @@ const server=net.createServer(connection=>{
     const client=validateCredentials(message.credentials);await client.identity();
     if(message.action==='command')launch(message.command);
     else if(message.action==='stop'){
-     if(card&&card.status==='pending')await client.api('POST','/issues/'+job.issueId+'/interactions/'+card.id+'/withdraw',{});
+     if(card&&card.status==='pending'){
+      try{await client.api('POST','/issues/'+job.issueId+'/interactions/'+card.id+'/withdraw',{});}
+      catch(error){state.withdrawError=redact(error.message);event({type:'interaction-withdraw-failed',error:state.withdrawError});}
+     }
      pauseClock();state.phase='stopping';save();await posture(client);send({type:'stop'});
      setTimeout(()=>child.kill('SIGKILL'),30000).unref();
      const deadline=Date.now()+5000;
@@ -120,6 +123,6 @@ const server=net.createServer(connection=>{
  });
 });
 server.listen(socket,()=>{fs.chmodSync(socket,0o600);save();});
-process.on('SIGTERM',()=>{pauseClock();state.phase='stopped';save();child.kill('SIGTERM');server.close();setTimeout(()=>process.exit(0),1000).unref();});
-setTimeout(()=>{state.phase='stopped';state.error='BRIDGE_SESSION_LIFETIME_EXPIRED';save();child.kill('SIGTERM');server.close();setTimeout(()=>process.exit(0),1000).unref();},8*60*60*1000).unref();
+process.on('SIGTERM',()=>{pauseClock();state.phase='interrupted';save();child.kill('SIGTERM');server.close();setTimeout(()=>process.exit(0),1000).unref();});
+setTimeout(()=>{state.phase='interrupted';state.error='BRIDGE_SESSION_LIFETIME_EXPIRED';save();child.kill('SIGTERM');server.close();setTimeout(()=>process.exit(0),1000).unref();},8*60*60*1000).unref();
 save();

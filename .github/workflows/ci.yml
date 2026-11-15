@@ -43,8 +43,20 @@ jobs:
           node-version: '22.22.1'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Run the complete portable suite with four isolated file workers
+      - name: Install the system Python test dependency used by native fixtures
         run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes python3-pytest
+          /usr/bin/python3 -c 'import pytest; print(pytest.__version__)'
+      - name: Run the complete portable suite with four isolated file workers
+        env:
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/controlled-dev-ci.gitconfig
+          GIT_ATTR_NOSYSTEM: '1'
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/controlled-dev-ci-profile
+        run: |
+          touch "$GIT_CONFIG_GLOBAL"
+          mkdir -p "$PI_CODING_AGENT_DIR"
           node --input-type=module <<'JS'
           import { readFileSync } from 'node:fs';
           import { spawnSync } from 'node:child_process';

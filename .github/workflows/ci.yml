@@ -44,4 +44,16 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Run the complete portable suite with four isolated file workers
-        run: npm test -- --test-concurrency=4
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+          const args = JSON.parse(readFileSync('package.json', 'utf8')).scripts.test.trim().split(/\s+/);
+          if (args.shift() !== 'node') throw new Error('Expected the portable Node test command');
+          const concurrency = args.indexOf('--test-concurrency=1');
+          if (concurrency < 0) throw new Error('Expected an explicit portable test concurrency');
+          args[concurrency] = '--test-concurrency=4';
+          const result = spawnSync(process.execPath, args, { stdio: 'inherit' });
+          if (result.error) throw result.error;
+          process.exit(result.status ?? 1);
+          JS

@@ -48,14 +48,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes python3-pytest
           /usr/bin/python3 -c 'import pytest; print(pytest.__version__)'
+      - name: Remove preinstalled LFS drivers from disposable runner defaults
+        run: |
+          if git config --system --get-regexp '^filter\.lfs\.' >/dev/null; then
+            sudo git config --system --remove-section filter.lfs
+          fi
+          if git config --global --get-regexp '^filter\.lfs\.' >/dev/null; then
+            git config --global --remove-section filter.lfs
+          fi
+          if git config --name-only --get-regexp '^(filter\..*\.(clean|smudge|process)|merge\..*\.driver|core\.fsmonitor)$'; then
+            echo 'Unexpected executable Git driver in the test runner configuration' >&2
+            exit 1
+          fi
       - name: Run the complete portable suite with four isolated file workers
         env:
-          GIT_CONFIG_NOSYSTEM: '1'
-          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/controlled-dev-ci.gitconfig
-          GIT_ATTR_NOSYSTEM: '1'
           PI_CODING_AGENT_DIR: ${{ runner.temp }}/controlled-dev-ci-profile
         run: |
-          touch "$GIT_CONFIG_GLOBAL"
           mkdir -p "$PI_CODING_AGENT_DIR"
           node --input-type=module <<'JS'
           import { readFileSync } from 'node:fs';

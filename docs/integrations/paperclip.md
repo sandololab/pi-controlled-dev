@@ -1,6 +1,6 @@
 # Paperclip integration and agent setup
 
-This guide covers **pi-controlled-dev 0.1.0**, with the same runtime as 0.1.0-beta.5. It describes configuration, existing interfaces and the optional [Paperclip human transport](../../integrations/paperclip/README.md). The transport hosts a live native Pi session and retains its confirmation/recovery boundaries; it requires explicit host configuration and separate real human acceptance before production adoption.
+This guide covers **pi-controlled-dev 0.2.0**. It describes configuration, existing interfaces and the optional [Paperclip human transport](../../integrations/paperclip/README.md). The transport hosts a live native Pi session and retains its confirmation/recovery boundaries; it requires explicit host configuration and separate real human acceptance before production adoption.
 
 ## Choose the right tool
 
@@ -29,7 +29,7 @@ Run these in the **shell**, inside the project being developed, not inside the p
 ```sh
 export PI_CODING_AGENT_DIR="$HOME/.pi-controlled-dev"
 cd /path/to/project
-pi install git:github.com/sandololab/pi-controlled-dev@v0.1.0 -l
+pi install git:github.com/sandololab/pi-controlled-dev@v0.2.0 -l
 pi install npm:pi-subagents -l
 pi list
 pi --list-models
@@ -117,4 +117,4 @@ Test orderly session reopen separately at a supported checkpoint, using the same
 
 Close active work before changing packages. `pi update` updates Pi itself in Pi 1.5; `pi update --extensions` updates installed packages, and `pi update git:github.com/sandololab/pi-controlled-dev` targets this source. Pinned revisions remain pinned; install a new selected tag explicitly to advance them. A local path installation follows that directory, not an automatic GitHub update. See the upstream [Pi package documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md).
 
-The package enforces tool and workflow boundaries, not an OS sandbox. Its internal Reviewer is separate from the independent Paperclip reviewer. Earlier broad-suite failures and conservative recovery limits remain in [validation status](../VALIDATION.md). Release 0.1.0 removes the prerelease suffix; it does not provide a new claim of full production qualification.
+The package enforces tool and workflow boundaries, not an OS sandbox. Its internal Reviewer is separate from the independent Paperclip reviewer. Earlier broad-suite failures and conservative recovery limits remain in [validation status](../VALIDATION.md). A live Paperclip acceptance test is still required before production adoption.

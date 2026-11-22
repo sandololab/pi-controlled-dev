@@ -11,6 +11,7 @@ import { inventoryHash, inventoryTree } from './controlled-agent-runtime.js';
 import { workspaceManifest } from './scope-guard.js';
 import { collectValidationEvidence, collectValidationEvidenceAsync } from './validation-runner.js';
 import { hostValidationRecipeName } from './validation-proposals.js';
+import { regressionCommand } from './regression-validation.js';
 
 const acquired=new WeakMap<object,{readonly commandsHash:string;readonly reader:Pick<DurableStore,'read'>;readonly artifacts:readonly ArtifactRef[];readonly text:string;readonly workInventory:string;readonly passed:boolean;readonly complete:boolean}>();
 export interface DeveloperBaselineEvidence {
@@ -27,6 +28,7 @@ function present(root:string,path:string):boolean{
 /** Distinguish a prospective test from a test that can actually run before editing.
  * Only exact closed host recipes are recognized; arbitrary code is never inferred. */
 function readiness(command:TaskSpec['validationCommands'][number],root:string):string|undefined{
+ if(regressionCommand(command))return 'The regression comparison requires the frozen candidate test files.';
  const name=hostValidationRecipeName(command);if(!name)return "This check is not a recognized initial recipe: it remains scheduled after the changes.";
  if(name==='node')return "The expected-content check concerns the result after the changes.";
  if(name==='python3'&&command.argv[0]==='-B'){

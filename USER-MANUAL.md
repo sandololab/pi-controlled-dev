@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "User manual — version 0.1.0"
+subtitle: "User manual — version 0.2.0"
 lang: en-US
 toc-title: Contents
 ---
@@ -9,7 +9,7 @@ toc-title: Contents
 
 # What is pi-controlled-dev?
 
-pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.1.0**, a numbered release; some interruptions still require operator intervention. See the [Paperclip integration guide](docs/integrations/paperclip.md) for agent configuration.
+pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.2.0**, a numbered release; some interruptions still require operator intervention. See the [Paperclip integration guide](docs/integrations/paperclip.md) for agent configuration.
 
 All package interface text, generated explanations and role instructions use English. You may describe your objective in another language. Your words, source contents, exact evidence and historical records are preserved verbatim; they are not silently translated. English and Italian documentation both use the actual English menu labels.
 
@@ -242,7 +242,7 @@ For a tarball in Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.2.0.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list
@@ -275,6 +275,12 @@ Esc during Scout requests stop, waits for termination verification and discards 
 Supported checks include exact contents, observed existing npm/pytest/Cargo/Maven/Gradle/Make tests, candidate tests and independent review. Fixed host recipes never interpret natural language as code. Diff checking is always included but alone proves no functional correctness. Repository tests execute candidate code: review the proposal before authorizing it.
 
 Only after confirmation does the host build, validate and persist configuration: in the Pi profile for older projects, or `.controlled-dev` after storage adoption. You need not write JavaScript, shell, argv or JSON. Creation does not replace implementation/completion gates; there is no public editor for frozen TaskSpec. A prepared, active or incomplete task prevents a second one in the same project.
+
+## Require a regression check
+
+Commit the project's executable `scripts/controlled-dev-regression` adapter before creating the bug-fix task. In **Checks**, ask Scout for a `REGRESSION` check and confirm the test ID, the expected defect code, the selected test and fixture files, and the acceptance criterion. The host runs it after Developer hands off the candidate. Under **Status → Checks**, the baseline must report the expected defect and the candidate must pass. A setup error or a baseline that already passes leaves reproduction unverified.
+
+The [adapter protocol and limits](README.md#regression-checks-with-the-projects-test-runner) describe what the repository needs to provide.
 
 # Start the task
 

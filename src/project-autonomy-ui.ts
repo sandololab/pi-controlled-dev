@@ -40,7 +40,7 @@ export async function approvePlanAndAutonomy(ctx:ProductionCommandContext,planni
      for(let i=recipes.length-1;i>=0;i--)if(recipes[i]!.kind==='CONTENT'&&recipes[i]!.paths.some(path=>pathContained(path,allowedPaths,[])))recipes.splice(i,1);
      for(const recipe of validationPlan)if(!recipes.some(previous=>JSON.stringify(previous)===JSON.stringify(recipe)))recipes.push(recipe);
    }
-   const commands=compileValidations({objective:"Verify the integrated result",scope:[],criteria:[],architectureFindings:[],designExpectations:[],validationPlan:recipes},executablePath);
+   const commands=compileValidations({objective:"Verify the integrated result",scope:[],criteria:[],architectureFindings:[],designExpectations:[],validationPlan:recipes},executablePath,{recheckRegression:true});
    const policy=repo.propose(draft,taskBounds,{validationIntent:draft.design?.validationStrategy??["Verify the integrated baseline of the approved plan"],validationPlan:recipes,commands});
    const planQ=planning.prepareApproval(draft.revision),policyQ=repo.prepareApproval(policy.policyId),receipts=await presentTrustedConfirmationBundle(ctx,[planQ,policyQ]);fresh();
    if(!receipts)return;

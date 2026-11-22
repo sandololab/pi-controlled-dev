@@ -5,7 +5,7 @@ declare module 'node:url' {
 }
 declare module 'node:process' { export const pid:number; export const platform:string; }
 declare module 'node:child_process' {
-  export function spawnSync(executable:string,args:string[],options:{cwd:string;encoding:'utf8';timeout:number;killSignal:string;maxBuffer:number;shell:false}):
+  export function spawnSync(executable:string,args:string[],options:{cwd:string;env?:Record<string,string|undefined>;encoding:'utf8';timeout:number;killSignal:string;maxBuffer:number;shell:false}):
     {pid:number;status:number|null;signal:string|null;stdout:string;stderr:string;error?:Error & {code?:string}};
 }
 declare module 'node:path' { export const delimiter:string; }

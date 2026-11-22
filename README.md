@@ -1,10 +1,10 @@
 # pi-controlled-dev
 
-**0.1.0** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit confirmations by an authorized operator.
+**0.2.0** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit confirmations by an authorized operator.
 
 Describe the software result you want. Review the proposed plan, choose supervised execution or approve bounded autonomy, and follow each task through implementation, verification and integration.
 
-**Current release:** 0.1.0 includes Pi 1.5 builtin-read compatibility, delegated local Git preparation, progressive source discovery and orderly continuation of a saved Pi session. A real same-session task completed through Scout, Developer, checks and Reviewer. This is focused evidence, not a new clean full-suite run or production qualification. Read the [release notes](CHANGELOG.md) and [validation status](docs/VALIDATION.md) for exact coverage and remaining limits.
+**Current release:** 0.2.0 adds language-independent regression checks. A bug-fix task can verify that the project’s approved test reproduces the declared defect on the original Git baseline and passes on the candidate. See the [runner setup](#regression-checks-with-the-projects-test-runner), [changelog](CHANGELOG.md) and [validation status](docs/VALIDATION.md).
 
 The interface and agent guidance are in English. Documentation is available in [English](docs/README.md) and [Italiano](docs/it/README.md). See the complete [user manual](USER-MANUAL.md) / [manuale italiano](docs/it/USER-MANUAL.md).
 
@@ -29,7 +29,7 @@ Use a dedicated Pi profile and install the packages locally from the project fol
 ```sh
 export PI_CODING_AGENT_DIR="$HOME/.pi-controlled-dev"
 cd /path/to/project
-pi install git:github.com/sandololab/pi-controlled-dev@v0.1.0 -l
+pi install git:github.com/sandololab/pi-controlled-dev@v0.2.0 -l
 pi install npm:pi-subagents -l
 pi list
 ```
@@ -38,7 +38,7 @@ These commands follow Pi 1.5.0's [package documentation](https://github.com/eare
 
 The `-l` flag records packages in the project’s `.pi/settings.json`; keep the dedicated profile and credentials outside project sources. Include this non-secret configuration in the clean Git baseline before creating a task, and keep credentials outside the repository. Do not change it underneath an active task.
 
-The example pins release `v0.1.0`. Omitting the suffix follows the default branch; using `@COMMIT_SHA` pins an exact commit. Pinned tags and commits do not advance with later updates. To change a release pin, install the explicitly selected new tag after closing active work.
+The example pins release `v0.2.0`. Omitting the suffix follows the default branch; using `@COMMIT_SHA` pins an exact commit. Pinned tags and commits do not advance with later updates. To change a release pin, install the explicitly selected new tag after closing active work.
 
 To update an existing Git installation, close Pi normally, select the same Pi
 profile in your terminal, then run:
@@ -48,7 +48,7 @@ pi update git:github.com/sandololab/pi-controlled-dev
 ```
 
 Restart Pi afterward. Local development edits do not update GitHub or an installed
-Git copy automatically. Use 0.1.0 on the installation that creates and resumes an orderly local
+Git copy automatically. Use the same package version when creating and resuming an orderly local
 continuation. Older asynchronous process evidence requires beta.4 or later;
 shared saved copies require beta.3 or later.
 See [smaller saved copies](docs/CANDIDATE-STORAGE.md) and the
@@ -59,7 +59,7 @@ For an offline alternative, build a tarball with `npm pack --pack-destination "$
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.2.0.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev" -l
 ```
 
@@ -124,6 +124,14 @@ The twelve packaged skills provide methodology, not authority. The `/controlled-
 The host compiles proposed checks into fixed recipes: exact file content, configured project tests, candidate Python tests and a diff formatting check. Supported project test mechanisms include npm, pytest, Cargo, Maven, Gradle and Make. Project tests execute repository code in the candidate copy. A diff formatting check alone does not prove correctness.
 
 Candidate Python tests may be created by the current task. The proposal identifies exact test files and supported pytest configuration. The fixed runner disables cache, bytecode, automatic plugin loading and extra environment options; plugins explicitly required by tests remain possible. At least one ordinary test must pass.
+
+### Regression checks with the project's test runner
+
+A bug-fix proposal can require a check named `REGRESSION`. It selects a stable test ID, the expected defect code, an acceptance criterion, and one to eight exact test or fixture files under `test/`, `tests/` or `spec/`. Set up the executable `scripts/controlled-dev-regression` in a separate, committed change before proposing the bug fix. The package uses this adapter unchanged on both versions. The adapter chooses the project's test tooling and can be written in any language available in the approved host environment.
+
+The adapter runs from the project root and receives the test ID followed by the relative input paths as separate arguments. It must run that test and write exactly one JSON result to stdout. Use `{"testId":"the-id","outcome":"PASS"}` for a completed pass, or `{"testId":"the-id","outcome":"FAIL","failure":"the-defect-code"}` for the specific observed failure. Exit zero after reporting either completed outcome. Use a nonzero exit for missing dependencies, build or setup errors, skips, and other cases where no valid result was obtained. The adapter should direct framework output away from its JSON response, avoid modifying the repository, and use the same runner configuration and dependencies on both versions. The adapter is trusted project test code and runs under the same host authority as existing test recipes.
+
+After Developer hands off the frozen candidate, the host materializes a disposable baseline from the task's original Git commit and overlays only the approved test inputs with the same candidate bytes. A required task check passes only when the baseline reports the expected defect and the candidate passes. Reviewer receives the baseline commit, both outcomes and the input digests in the attributed results. Promotion and final integration checks rerun the test on the integrated tree and report that result as a recheck. The first implementation supports regular files in baseline trees up to 2,048 files and 64 MiB, with test inputs limited to 1 MiB per file. Unsupported trees and missing prerequisites leave reproduction inconclusive.
 
 Start a prepared task with `/controlled-dev run`. Read each native confirmation. The initial selection is **No, go back**. No, Esc, timeout or UI failure do not approve anything. Pending decisions can be opened through:
 
@@ -294,7 +302,7 @@ npm pack --dry-run
 The installation probe is separate:
 
 ```sh
-P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0.tgz" \
+P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.2.0.tgz" \
   node --test test/product-install.test.mjs
 ```
 

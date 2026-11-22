@@ -2,8 +2,10 @@ import { executeSupervisedCommand } from './host-command.js';
 import type { HostCommandOptions, HostCommandExecution } from './host-command.js';
 import { runQuiescent } from './run-quiescence.js';
 import { spawnSync } from 'node:child_process';
+import { env } from 'node:process';
+import { regressionCommand, REGRESSION_BASE_ENV } from './regression-validation.js';
 import { Buffer } from 'node:buffer';
-import { canonicalize, hashBytes, hashCanonical, hashContract, parseJson, validateStructure } from './contracts.js';
+import { canonicalize, hashBytes, hashCanonical, hashContract, parseJson, validateScalar, validateStructure } from './contracts.js';
 import type { ArtifactRef, CommandSpec, Criterion, TaskSpec, ValidationResult, WorkflowState } from './contracts.js';
 import type { DurableStore } from './store.js';
 import { workspaceManifest, trackedWorkspaceManifest } from './scope-guard.js';
@@ -18,14 +20,15 @@ const executed=new WeakSet<object>();
 export function executeApprovedCommand(spec:TaskSpec,commandId:string,root:string){
   const command=spec.validationCommands.find(c=>c.id===commandId);
   if(!command||!validateStructure('CommandSpec',command).ok||hashContract('TaskSpec',spec)!==spec.specHash)throw new Error('VALIDATION_PRECONDITION');
-  return executeHostValidationCommand(command,root);
+  return executeHostValidationCommand(command,root,regressionCommand(command)?'recheck':undefined);
 }
 /** Shared process primitive for exact host-selected recipes. Never registered as a model tool.
  * Project callers must validate and bind their own immutable approved plan before calling. */
-export function executeHostValidationCommand(command:CommandSpec,root:string){
+export function executeHostValidationCommand(command:CommandSpec,root:string,regressionBaseline?:string){
   if(!validateStructure('CommandSpec',command).ok)throw new Error('VALIDATION_PRECONDITION');
   const startedAt=new Date().toISOString(),child=spawnSync(command.executable,[...command.argv],{cwd:root,encoding:'utf8',timeout:command.timeoutMs,
-    killSignal:'SIGKILL',maxBuffer:64*1024,shell:false}),endedAt=new Date().toISOString();
+    killSignal:'SIGKILL',maxBuffer:64*1024,shell:false,
+    ...(regressionBaseline?{env:{...env,[REGRESSION_BASE_ENV]:regressionBaseline}}:{})}),endedAt=new Date().toISOString();
   if(!Number.isSafeInteger(child.pid)||child.pid<=0||(child.status===null&&child.signal===null))throw new Error('VALIDATION_TERMINAL_PROOF_UNAVAILABLE');
   return {command,startedAt,endedAt,child};
 }
@@ -48,24 +51,54 @@ export function runApprovedValidation(spec:TaskSpec,state:WorkflowState,commandI
   if(digest()!==candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
   return collectValidationEvidence(command,store,{taskId:spec.taskId,specHash:spec.specHash,
     candidate:{root:candidate.root,baseCommit:candidate.baseCommit,digest:candidate.digest,generation:candidate.generation},
-    criteria:spec.acceptanceCriteria,createdAt:state.createdAt,patchRef:candidate.patch.id});
+    criteria:spec.acceptanceCriteria,createdAt:state.createdAt,patchRef:candidate.patch.id, regressionBaseline:state.baselineCommit});
 }
 /** Project callers retain a separate exact baseline/run envelope in the project store.
  * Sharing process/evidence machinery never creates a WorkflowState or accepts task results. */
 export interface ValidationBinding {readonly taskId:string;readonly specHash:string;
   readonly candidate:{readonly root:string;readonly baseCommit:string;readonly digest:string;readonly generation:number};readonly criteria:readonly Criterion[];readonly createdAt:string;
-  readonly patchRef?:string;readonly trackedBaseline?:boolean;readonly scenario?:import('./scenario-management.js').ExecutableScenario}
+  readonly regressionBaseline?:string;readonly patchRef?:string;readonly trackedBaseline?:boolean;readonly scenario?:import('./scenario-management.js').ExecutableScenario}
 export function collectValidationEvidence(command:CommandSpec,store:DurableStore,binding:ValidationBinding){
   const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(binding.candidate.root,binding.candidate.baseCommit):workspaceManifest(binding.candidate.root,binding.candidate.baseCommit));
   if(digest()!==binding.candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
-  return finishValidationEvidence(command,store,binding,executeHostValidationCommand(command,binding.candidate.root));
+  return finishValidationEvidence(command,store,binding,executeHostValidationCommand(command,binding.candidate.root,approvedRegressionBase(command,binding)));
 }
 export async function collectValidationEvidenceAsync(command:CommandSpec,store:DurableStore,binding:ValidationBinding,options:HostCommandOptions={}){
   const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(binding.candidate.root,binding.candidate.baseCommit):workspaceManifest(binding.candidate.root,binding.candidate.baseCommit));
   if(digest()!==binding.candidate.digest)throw new Error('VALIDATION_CANDIDATE_CHANGED');
-  const execution=await executeSupervisedCommand(command,binding.candidate.root,store,{taskId:binding.taskId,specHash:binding.specHash,candidateDigest:binding.candidate.digest,candidateGeneration:binding.candidate.generation},{...options,onProgress:event=>options.onProgress?.({...event,description:binding.criteria.find(c=>c.commandIds.includes(command.id))?.text??'Approved automated check'})});
+  const execution=await executeSupervisedCommand(command,binding.candidate.root,store,{taskId:binding.taskId,specHash:binding.specHash,candidateDigest:binding.candidate.digest,candidateGeneration:binding.candidate.generation},{...options,regressionBaseline:approvedRegressionBase(command,binding),onProgress:event=>options.onProgress?.({...event,description:binding.criteria.find(c=>c.commandIds.includes(command.id))?.text??'Approved automated check'})});
   return finishValidationEvidence(command,store,binding,execution);
 }
+function approvedRegressionBase(command:CommandSpec,binding:ValidationBinding):string|undefined {
+  const regression=regressionCommand(command);
+  if(!regression)return;
+  if(regression.mode==='pair'){
+    if(!validateScalar('GitOID',binding.regressionBaseline).ok)throw new Error('REGRESSION_BASELINE_REQUIRED');
+    return binding.regressionBaseline;
+  }
+  if(binding.regressionBaseline)throw new Error('REGRESSION_RECHECK_NOT_A_TASK_PROOF');
+}
+
+function regressionObservation(command:CommandSpec,binding:ValidationBinding,stdout:string) {
+  const recipe=regressionCommand(command);
+  if(!recipe)return;
+  const unavailable={valid:false,summary:'Regression comparison did not produce comparable evidence.'};
+  const lines=stdout.split('\n').filter(line=>line.startsWith('controlled-regression: '));
+  if(lines.length!==1)return unavailable;
+  try{
+    const value=JSON.parse(lines[0]!.slice('controlled-regression: '.length));
+    if(!value||value.testId!==recipe.testId||value.base!==(recipe.mode==='pair'?binding.regressionBaseline:'recheck')
+      ||!['EXPECTED_FAILURE','PASS','INCONCLUSIVE','NOT_RUN'].includes(value.before)||!['PASS','EXPECTED_FAILURE','INCONCLUSIVE'].includes(value.after)
+      ||!validateScalar('Hash',value.runnerDigest).ok||!Array.isArray(value.files)||value.files.length!==recipe.files.length
+      ||!value.files.every((file:{file:string;digest:string},index:number)=>file.file===recipe.files[index]&&validateScalar('Hash',file.digest).ok))return unavailable;
+    const valid=value.after==='PASS'&&value.before===(recipe.mode==='pair'?'EXPECTED_FAILURE':'NOT_RUN');
+    const summary=recipe.mode==='pair'
+      ? `Regression ${recipe.testId}: baseline ${value.base} ${value.before} (expected ${recipe.expectedFailure}); candidate ${value.after}. Test input digests: ${value.files.map((file:{digest:string})=>file.digest).join(', ')}.`
+      : `Regression ${recipe.testId}: integrated candidate ${value.after}.`;
+    return {valid,summary};
+  }catch{return unavailable}
+}
+
 function finishValidationEvidence(command:CommandSpec,store:DurableStore,binding:ValidationBinding,execution:ReturnType<typeof executeHostValidationCommand>|HostCommandExecution){
   const candidate=binding.candidate,commandId=command.id;
   const digest=()=>hashCanonical(binding.trackedBaseline?trackedWorkspaceManifest(candidate.root,candidate.baseCommit):workspaceManifest(candidate.root,candidate.baseCommit));
@@ -83,8 +116,9 @@ function finishValidationEvidence(command:CommandSpec,store:DurableStore,binding
   let childEvents:readonly RuntimeEvent[]=[],runtimeProblem:string|undefined,childRedactions=0;
   try{const captured=extractRuntimeEvents(stdout,stderr);childEvents=captured.events;childRedactions=captured.redactions}
   catch(error){runtimeProblem=error instanceof Error?error.message:'RUNTIME_EVIDENCE_INVALID'}
+  const regression=regressionObservation(command,binding,stdout);
   const status=postCandidateDigest!==candidate.digest||(process.error&&!timedOut)||runtimeProblem?'INVALID'
-    :timedOut?'TIMED_OUT':process.status===0?'PASSED':process.status!==null?'FAILED':'INVALID';
+    :timedOut?'TIMED_OUT':regression&&!regression.valid?'INVALID':process.status===0?'PASSED':process.status!==null?'FAILED':'INVALID';
   const correlationId=`validation-${token}`;
   const hostEvents:RuntimeEvent[]=[{schemaVersion:RUNTIME_EVENT_SCHEMA,timestamp:startedAt,source:'validation-runner',
     eventType:'validation.started',severity:'INFO',correlationId,data:{commandId:command.id,candidateGeneration:candidate.generation}},
@@ -113,7 +147,7 @@ function finishValidationEvidence(command:CommandSpec,store:DurableStore,binding
     reason:runtimeProblem?"Runtime evidence emitted by the check is incomplete or invalid. No successful outcome was recorded."
       :process.error?.code==='ENOBUFS'?"The check exceeded the allowed output limit and was interrupted. No successful outcome was recorded."
       :timedOut?"The check exceeded the maximum allowed time."
-      :`Approved command observed ${status}`});
+      :regression?.summary??`Approved command observed ${status}`});
   if(!validateStructure('ValidationResult',result).ok)throw new Error('VALIDATION_RESULT_INVALID');
   const scenario=binding.scenario??createExecutableScenario({taskId:binding.taskId,validationCommands:[command],acceptanceCriteria:binding.criteria},commandId,binding.createdAt),scenarioRef=store.put(`scenario-${scenario.scenarioHash.slice(0,24)}`,
     canonicalize(scenario),SCENARIO_MEDIA_TYPE);

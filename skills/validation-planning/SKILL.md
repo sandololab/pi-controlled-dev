@@ -19,6 +19,14 @@ For the native pre-task Python protocol, use `CANDIDATE_TEST` with `mechanism: "
 
 In the native pre-task `validations` array, only `CANDIDATE_TEST` accepts `configPath`. For `EXISTING_TEST`, put the observed configuration in `existingTests`, supply its `mechanism` and omit `configPath` from the validation. That recipe runs the standard suite; its `paths` describe coverage and do not select individual test files. Use `CANDIDATE_TEST` when exact Python test-file selection is required. `CONTENT` and `REVIEW` accept neither `mechanism` nor `configPath`.
 
+## Regression tests
+
+For language-independent verification, the host supports REGRESSION when the repository already provides the executable scripts/controlled-dev-regression. Choose one criterion, a stable test ID, the exact defect code and only the test inputs the host must copy to the baseline. The adapter must remain byte-identical across both versions. If the runner is missing, propose its setup separately.
+
+For a bug fix, propose a focused check of the affected behavior when the existing approved checks do not exercise it. State the behavior that must hold, a plausible change that would break it, and what existing coverage you inspected. If an existing check already catches that break, reuse it. Prefer an observable assertion to one tied to internal wiring, a chosen constant, or timing unrelated to the requirement.
+
+Describe the expected failure on the unchanged code and the expected result after the fix. Treat both as predictions until the host records the results. If the host can run the same check with the same test inputs on the starting code and the candidate through approved recipes, use that comparison. If a new test can run only on the candidate, record that limit. Missing prerequisites, a skipped test and an unrelated failure do not establish reproduction. Use repository-owned synthetic fixtures where practical and record the origin of any new shared fixture.
+
 ## Simple content changes
 
 Prefer a host-owned deterministic check when the expected content is unambiguous. Describe it as, for example, “Check that README.md preserves Before and adds After on the following line.” The host, not a model-generated snippet, must construct and execute the actual check. If the expected text or ordering is ambiguous, ask about that behavior, not about argv or regex syntax.

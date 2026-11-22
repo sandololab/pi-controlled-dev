@@ -7,8 +7,8 @@ declare module 'node:child_process' {
     once(event:'close',listener:(code:number|null,signal:string|null)=>void):void;
     kill(signal:string):boolean;
   }
-  export function spawn(executable:string,args:readonly string[],options:{cwd:string;shell:false;detached:true;stdio:readonly ['ignore','pipe','pipe']}):HostChild;
+  export function spawn(executable:string,args:readonly string[],options:{cwd:string;shell:false;detached:true;env?:Record<string,string|undefined>;stdio:readonly ['ignore','pipe','pipe']}):HostChild;
 }
 declare module 'node:process' {export function hrtime():[number,number];export namespace hrtime {function bigint():bigint}}
 
-declare module 'node:process' {export function kill(pid:number,signal:string):void}
+declare module 'node:process' {export function kill(pid:number,signal:string):void;export const env:Record<string,string|undefined>}

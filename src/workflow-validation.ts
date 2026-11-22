@@ -51,6 +51,7 @@ export class WorkflowValidationService {
         criteria: taskSpec.acceptanceCriteria,
         createdAt: workflowState.createdAt,
         patchRef: candidate.patch.id,
+        regressionBaseline: workflowState.baselineCommit,
       }, options);
       results.push(evidence.result);
       artifacts.push(...evidence.artifacts);

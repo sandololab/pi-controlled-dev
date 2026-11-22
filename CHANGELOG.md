@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0]
+
+- Add language-independent regression checks. A project-owned adapter runs the approved test against the task baseline and the frozen candidate. The check requires the declared defect on the baseline and a pass on the candidate.
+- Link the check to its acceptance criterion and show both attributed outcomes to Reviewer. Promotion and integration rerun the check against the integrated tree.
+- Update the Scout and Reviewer guidance on test coverage, reproducibility and incomplete evidence, following the [Craft testing standard](https://github.com/storytold/craft-contrib/blob/main/standards/testing.md).
+
 ## [0.1.0] - 2026-11-08
 
 Publish the existing implementation under a release number without a prerelease suffix. Runtime sources, extension, skills, prompts, dependencies and confirmation rules are unchanged from 0.1.0-beta.5. Earlier tags and evidence retain their historical names.

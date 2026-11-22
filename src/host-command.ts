@@ -5,7 +5,7 @@
  * Linux process groups cover ordinary descendants; they do not isolate a program
  * that deliberately detaches itself. An unproven shutdown is never a successful check.
  */
-import { hrtime, kill, platform } from 'node:process';
+import { env, hrtime, kill, platform } from 'node:process';
 import { spawn } from 'node:child_process';
 import { Buffer } from 'node:buffer';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -28,6 +28,7 @@ export interface HostCommandProgress {
 export interface HostCommandOptions {
   readonly onProgress?: (event: HostCommandProgress) => void;
   readonly supervisionEpoch?: ArtifactRef;
+  readonly regressionBaseline?: string;
 }
 
 export interface HostCommandOutcome {
@@ -127,6 +128,7 @@ async function executeCommandLifecycle(
       // as well as the command. argv is passed directly, without a shell parser.
       child = spawn(command.executable, [...command.argv], {
         cwd: workRoot, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+        ...(options.regressionBaseline ? {env:{...env,PI_CONTROLLED_DEV_REGRESSION_BASE:options.regressionBaseline}} : {}),
       });
     } catch (error) {
       appendJournalRecord('NOT_STARTED', { reason: 'SPAWN_FAILED' });

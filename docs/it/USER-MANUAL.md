@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "Manuale utente — versione 0.1.0"
+subtitle: "Manuale utente — versione 0.2.0"
 lang: it-IT
 toc-title: Indice
 ---
@@ -14,7 +14,7 @@ La TUI e i prompt inclusi sono in inglese; i nomi dei pulsanti riportati qui cor
 
 pi-controlled-dev è un package per Pi Coding Agent. Ti permette di affidare un lavoro di sviluppo a ruoli distinti, con confini espliciti, verifiche del risultato e conferme richieste a te.
 
-Questo manuale descrive la versione **0.1.0**. È una versione preliminare: alcuni problemi richiedono un intervento dell'operatore invece di una ripresa automatica.
+Questo manuale descrive la versione **0.2.0**. Alcune interruzioni richiedono ancora un intervento dell’operatore.
 
 # Stato effettivo della versione
 
@@ -325,7 +325,7 @@ Supponendo che il file ricevuto sia nella directory Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.2.0.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list
@@ -384,6 +384,12 @@ Le verifiche possibili comprendono contenuto esatto, test esistenti osservati ne
 Il package costruisce e valida la configurazione interna e la salva nell'archivio del progetto soltanto dopo la conferma: nel profilo Pi per i progetti precedenti, oppure nella cartella del progetto dopo lo spostamento descritto in **Conservare il progetto nella sua cartella**. Non devi scrivere JavaScript, shell, argv, comandi di test o JSON. La creazione non sostituisce i gate per implementazione e completamento. Non è previsto un editor pubblico dopo il congelamento del TaskSpec.
 
 Un task ancora attivo, incompleto o già preparato impedisce di crearne un secondo nello stesso progetto.
+
+## Richiedere una verifica di regressione
+
+Salva l’adapter eseguibile `scripts/controlled-dev-regression` in un commit precedente al task di correzione. L’adapter può usare il framework di test del progetto. Nel passaggio **Checks**, chiedi allo Scout una verifica `REGRESSION` e controlla l’identificativo del test, il codice del difetto atteso, i file di test o le fixture e il criterio di accettazione associato.
+
+Dopo la consegna del candidato, l’host esegue il test sulla baseline Git e sul candidato con gli stessi file di test approvati. In **Status → Checks**, la baseline deve riportare il difetto atteso e il candidato deve superare il test. Un errore di configurazione o una baseline che supera già il test lasciano la riproduzione da verificare. Per preparare l’adapter, consulta il [protocollo e i limiti](../../README.md#regression-checks-with-the-projects-test-runner).
 
 # Avviare il task
 

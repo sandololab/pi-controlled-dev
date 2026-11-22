@@ -1,6 +1,7 @@
 // Frozen into the approved command. The repository runner is invoked directly.
 const fs = require('node:fs');
 const path = require('node:path');
+const { tmpdir } = require('node:os');
 const { createHash } = require('node:crypto');
 const { spawnSync, execFileSync } = require('node:child_process');
 const adapter = 'scripts/controlled-dev-regression';
@@ -78,9 +79,12 @@ function main(mode, testId, expectedFailure, criterion, ...files) {
   }));
   let before = 'NOT_RUN';
   if (base !== 'recheck') {
-    const temp = fs.mkdtempSync('/tmp/controlled-regression-');
+    const temporaryRoot = fs.realpathSync(tmpdir());
+    if (temporaryRoot === root || temporaryRoot.startsWith(root + path.sep)) {
+      throw new Error('Invalid baseline location');
+    }
+    const temp = fs.mkdtempSync(path.join(temporaryRoot, 'controlled-regression-'));
     try {
-      if (temp.startsWith(root + path.sep)) throw new Error('Invalid baseline location');
       materialize(root, temp, base);
       if (!read(temp, adapter, true).equals(runner)) throw new Error('Regression runner changed');
       files.forEach((file, index) => {

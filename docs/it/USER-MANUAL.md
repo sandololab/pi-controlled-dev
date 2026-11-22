@@ -385,6 +385,12 @@ Il package costruisce e valida la configurazione interna e la salva nell'archivi
 
 Un task ancora attivo, incompleto o già preparato impedisce di crearne un secondo nello stesso progetto.
 
+## Richiedere una verifica di regressione
+
+Salva l’adapter eseguibile `scripts/controlled-dev-regression` in un commit precedente al task di correzione. L’adapter può usare il framework di test del progetto. Nel passaggio **Checks**, chiedi allo Scout una verifica `REGRESSION` e controlla l’identificativo del test, il codice del difetto atteso, i file di test o le fixture e il criterio di accettazione associato.
+
+Dopo la consegna del candidato, l’host esegue il test sulla baseline Git e sul candidato con gli stessi file di test approvati. In **Status → Checks**, la baseline deve riportare il difetto atteso e il candidato deve superare il test. Un errore di configurazione o una baseline che supera già il test lasciano la riproduzione da verificare. Per preparare l’adapter, consulta il [protocollo e i limiti](../../README.md#regression-checks-with-the-projects-test-runner).
+
 # Avviare il task
 
 Usa:

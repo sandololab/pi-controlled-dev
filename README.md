@@ -125,6 +125,14 @@ The host compiles proposed checks into fixed recipes: exact file content, config
 
 Candidate Python tests may be created by the current task. The proposal identifies exact test files and supported pytest configuration. The fixed runner disables cache, bytecode, automatic plugin loading and extra environment options; plugins explicitly required by tests remain possible. At least one ordinary test must pass.
 
+### Regression checks with the project's test runner
+
+A bug-fix proposal can require a check named `REGRESSION`. It selects a stable test ID, the expected defect code, an acceptance criterion, and one to eight exact test or fixture files under `test/`, `tests/` or `spec/`. Set up the executable `scripts/controlled-dev-regression` in a separate, committed change before proposing the bug fix. The package uses this adapter unchanged on both versions. The adapter chooses the project's test tooling and can be written in any language available in the approved host environment.
+
+The adapter runs from the project root and receives the test ID followed by the relative input paths as separate arguments. It must run that test and write exactly one JSON result to stdout. Use `{"testId":"the-id","outcome":"PASS"}` for a completed pass, or `{"testId":"the-id","outcome":"FAIL","failure":"the-defect-code"}` for the specific observed failure. Exit zero after reporting either completed outcome. Use a nonzero exit for missing dependencies, build or setup errors, skips, and other cases where no valid result was obtained. The adapter should direct framework output away from its JSON response, avoid modifying the repository, and use the same runner configuration and dependencies on both versions. The adapter is trusted project test code and runs under the same host authority as existing test recipes.
+
+After Developer hands off the frozen candidate, the host materializes a disposable baseline from the task's original Git commit and overlays only the approved test inputs with the same candidate bytes. A required task check passes only when the baseline reports the expected defect and the candidate passes. Reviewer receives the baseline commit, both outcomes and the input digests in the attributed results. Promotion and final integration checks rerun the test on the integrated tree and report that result as a recheck. The first implementation supports regular files in baseline trees up to 2,048 files and 64 MiB, with test inputs limited to 1 MiB per file. Unsupported trees and missing prerequisites leave reproduction inconclusive.
+
 Start a prepared task with `/controlled-dev run`. Read each native confirmation. The initial selection is **No, go back**. No, Esc, timeout or UI failure do not approve anything. Pending decisions can be opened through:
 
 ```text

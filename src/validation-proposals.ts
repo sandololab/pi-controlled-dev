@@ -3,6 +3,7 @@ import type { TaskSpec } from './contracts.js';
 import { validateScalar } from './contracts.js';
 import { lstatSync, realpathSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { regressionArguments, regressionCommand } from './regression-validation.js';
 
 // Closed host-owned recipes. Model/user prose can never become executable code or shell syntax.
 const recipes={NPM_TEST:['npm',['test']],PYTEST:['python3',['-m','pytest']],CARGO_TEST:['cargo',['test']],MAVEN_TEST:['mvn',['test']],GRADLE_TEST:['gradle',['test']],MAKE_TEST:['make',['test']]} as const;
@@ -105,14 +106,19 @@ if code == 0 and (counts.passed < 1 or counts.failed):
     code = 5
 raise SystemExit(code)
 `;
-export function compileValidations(draft:TaskWizardDraft,resolveExecutable:(name:string)=>string):TaskSpec['validationCommands'] {
+export function compileValidations(draft:TaskWizardDraft,resolveExecutable:(name:string)=>string,options:{recheckRegression?:boolean}={}):TaskSpec['validationCommands'] {
   const commands:TaskSpec['validationCommands'][number][]=[];
   const add=(executable:string,argv:string[])=>{if(commands.some(c=>c.executable===executable&&JSON.stringify(c.argv)===JSON.stringify(argv)))return;
     commands.push({schemaVersion:1,id:`validation-${commands.length+1}`,executable,argv,timeoutMs:120000,required:true})};
   add(resolveExecutable('git'),['diff','--check']);
   for(const v of draft.validationPlan){
+    if(v.regression&&v.kind!=='REGRESSION')throw new Error('PRE_TASK_PROPOSAL_INVALID');
     if(v.kind==='REVIEW')continue;
-    if(v.kind==='CANDIDATE_TEST'){
+    if(v.kind==='REGRESSION'){
+      if(!v.regression||v.mechanism||v.configPath||v.expectedLines.length
+        ||(!options.recheckRegression&&v.regression.criterion>draft.criteria.length))throw new Error('PRE_TASK_PROPOSAL_INVALID');
+      add(resolveExecutable('node'),regressionArguments(v.regression,v.paths,options.recheckRegression===true));
+    }else if(v.kind==='CANDIDATE_TEST'){
       if(!candidateTestFields(v))throw new Error('PRE_TASK_PROPOSAL_INVALID');
       add(resolveExecutable('python3'),['-B','-c',candidatePytest,v.configPath!,...v.paths]);
     }else if(v.kind==='CONTENT'){
@@ -130,6 +136,7 @@ export function compileValidations(draft:TaskWizardDraft,resolveExecutable:(name
  * Canonical executable paths can end in npm-cli.js/python3.x after native resolution. */
 export function hostValidationRecipeName(command:TaskSpec['validationCommands'][number]):string|undefined {
   const argv=command.argv;
+  if(regressionCommand(command))return 'node';
   if(JSON.stringify(argv)===JSON.stringify(['diff','--check']))return 'git';
   if(argv[0]==='-B'&&argv[1]==='-c'&&argv[2]===candidatePytest
     &&candidateTestFields({kind:'CANDIDATE_TEST',mechanism:'PYTEST',configPath:argv[3],paths:argv.slice(4),expectedLines:[]}))return 'python3';

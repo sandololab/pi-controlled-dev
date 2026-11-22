@@ -34,6 +34,7 @@ import { showStatus, withProgress } from './controlled-ui.js';
 import { taskWizard, wizardSummary } from './task-wizard.js';
 import type { ProposeTask } from './task-wizard.js';
 import { compileValidations } from './validation-proposals.js';
+import { regressionCommand } from './regression-validation.js';
 import { CurrentProject } from './current-project.js';
 import { execFileSync } from 'node:child_process';
 import { Buffer } from 'node:buffer';
@@ -422,7 +423,11 @@ export async function createProductionTask(ctx:ProductionCommandContext,propose?
   const plan=source('plan-snapshot',planText),currentTask=source('task-snapshot',objective);
   const draft:TaskSpec={schemaVersion:1,taskId:`task-${randomUUID()}`,specRevision:0,title:[...objective].slice(0,120).join(''),objective,plan,currentTask,
     requirements:[{schemaVersion:1,id:'requirement-1',text:objective}],
-    acceptanceCriteria:criteria.map((text,i)=>({schemaVersion:1,id:`criterion-${i+1}`,requirementIds:['requirement-1'],text,method:'REVIEW',commandIds:[],reviewInstruction:text})),
+    acceptanceCriteria:criteria.map((text,i)=>{
+      const commandIds=commands.filter(command=>regressionCommand(command)?.criterion===i+1).map(command=>command.id);
+      return {schemaVersion:1,id:`criterion-${i+1}`,requirementIds:['requirement-1'],text,
+        method:commandIds.length?'BOTH':'REVIEW',commandIds,reviewInstruction:text};
+    }),
     scope:{schemaVersion:1,repoRoot:repo,baseRef:'HEAD',allowedPaths,deniedPaths:automatic?[...automatic.repo.policy(automatic.repo.run(automatic.runId)).taskBounds.find(b=>b.plannedTaskId===automatic.plannedTaskId)!.protectedPaths]:[],strongConfinementRequired:false},
     constraints:[...proposal.architectureFindings.map(value=>`Architecture finding: ${value}`),...proposal.designExpectations.map(value=>`Design expectation: ${value}`)],validationCommands:commands,
     humanGates:{schemaVersion:1,beforeImplementation:true,onScopeChange:true,onOracleDecision:true,beforeCompletion:true,onRetryExhausted:true},

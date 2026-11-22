@@ -75,7 +75,7 @@ export function validateAutonomyPolicy(input:unknown):ProjectAutonomyPolicy {
  if(!Array.isArray(p.dependencyChanges)||p.dependencyChanges.length>128||p.dependencyChanges.some(d=>Object.keys(d).sort().join(',')!=='manifestPath,name,section,version'||!d.manifestPath.endsWith('package.json')||!validateScalar('Path',d.manifestPath).ok||!['dependencies','devDependencies','peerDependencies','optionalDependencies'].includes(d.section)||typeof d.name!=='string'||!d.name||typeof d.version!=='string'||!d.version))fail('POLICY_INVALID');
  // Recompile the closed recipes using their approved executable identities; prose cannot become a shell command.
  const resolver=compiledValidationResolver(p.finalCheckpoint.commands);
- if(!same(compileValidations({objective:'Final checkpoint',scope:[],criteria:[],architectureFindings:[],designExpectations:[],validationPlan:p.finalCheckpoint.validationPlan},resolver),p.finalCheckpoint.commands))fail('POLICY_INVALID');
+ if(!same(compileValidations({objective:'Final checkpoint',scope:[],criteria:[],architectureFindings:[],designExpectations:[],validationPlan:p.finalCheckpoint.validationPlan},resolver,{recheckRegression:true}),p.finalCheckpoint.commands))fail('POLICY_INVALID');
  const {contentDigest,...body}=p;if(hashCanonical(body)!==contentDigest)fail('POLICY_DIGEST');return freezeMemory(p);
 }
 /** Same DurableStore and short index mutation guard as checkpoints. Never writes task state. */

@@ -39,8 +39,8 @@ const memory=scalar<ProjectMemoryReference>('Memory',v=>{try{validateMemoryRefer
 const command=scalar<CommandSpec>('Command',v=>validateStructure('CommandSpec',v).ok);
 const scenario=scalar<ExecutableScenario>('Scenario',v=>validateExecutableScenario(v));
 const recipe=enumeration('NPM_TEST','PYTEST','CARGO_TEST','MAVEN_TEST','GRADLE_TEST','MAKE_TEST');
-const proposal=object('ValidationProposal',{kind:enumeration('CONTENT','EXISTING_TEST','REVIEW'),description:scalars.Text,
-  paths:list(scalars.Path,0,32),expectedLines:list(scalar<string>('Line',v=>typeof v==='string'&&v.length<=4096),0,128)},{mechanism:recipe});
+const proposal=object('ValidationProposal',{kind:enumeration('CONTENT','EXISTING_TEST','REGRESSION','REVIEW'),description:scalars.Text,
+  paths:list(scalars.Path,0,32),expectedLines:list(scalar<string>('Line',v=>typeof v==='string'&&v.length<=4096),0,128)},{mechanism:recipe,regression:object('RegressionExpectation',{testId:scalars.Text,expectedFailure:scalars.Text,criterion:integer(1,32)})});
 const planRef=object('CheckpointPlanReference',{planId:scalars.ID,revision:integer(1,256),digest:scalars.Hash,plannedTaskId:scalars.ID,controlledTaskId:scalars.ID});
 const definition=object('IntegrationCheckpointDefinition',{schemaVersion:literal(1),projectId:scalars.Hash,checkpointId:scalars.ID,
   revision:integer(1,256),title:scalars.Text,purpose:scalars.Text,status:enumeration('DRAFT','APPROVED','SUPERSEDED'),
@@ -59,7 +59,7 @@ export function checkpointCommands(plan:TaskWizardDraft['validationPlan'],resolv
   // Reuse the same closed recipe compiler; prose and scenario text never become shell authority.
   for(const v of plan)if(v.kind==='CONTENT'&&(v.paths.length!==1||!v.expectedLines.length||v.mechanism!==undefined)
     ||v.kind==='EXISTING_TEST'&&!v.mechanism||v.kind==='REVIEW'&&v.mechanism!==undefined)checkpointError('CHECKPOINT_VALIDATION_PLAN_INVALID');
-  return compileValidations({validationPlan:plan} as TaskWizardDraft,resolveExecutable);
+  return compileValidations({validationPlan:plan} as TaskWizardDraft,resolveExecutable,{recheckRegression:true});
 }
 export function validateDefinition(input:unknown):IntegrationCheckpointDefinition {
   const d=checkCheckpoint(definition,input) as IntegrationCheckpointDefinition;

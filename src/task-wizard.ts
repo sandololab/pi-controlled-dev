@@ -103,8 +103,10 @@ async function scoutProposal(ui:ControlledUI,propose:ProposeTask,objective:strin
 }
 function wizardVerifications(draft:TaskWizardDraft):string {
   return ["  Diff check: reports formatting errors. The other checks are also required to verify the result.",
-    ...draft.validationPlan.flatMap(v=>[`  ${v.kind==='REVIEW'?"Independent review":v.kind==='CONTENT'?"Exact content":v.kind==='CANDIDATE_TEST'?"Tests on the working copy":"Existing tests"}: ${v.description}`,
-      ...(v.paths.length?[`  File: ${v.paths.join(', ')}`]:[]),...(v.kind==='CANDIDATE_TEST'?[`  Pytest configuration: ${v.configPath}`,"  These tests will run after the specified files are created."]:[]),...(v.kind==='CONTENT'?["  Expected content (exact lines):",...v.expectedLines.map(l=>`    ${l}`)]:[])]),
+    ...draft.validationPlan.flatMap(v=>[`  ${v.kind==='REVIEW'?"Independent review":v.kind==='CONTENT'?"Exact content":v.kind==='CANDIDATE_TEST'?"Tests on the working copy":v.kind==='REGRESSION'?"Baseline and candidate regression":"Existing tests"}: ${v.description}`,
+      ...(v.paths.length?[`  File: ${v.paths.join(', ')}`]:[]),
+      ...(v.regression?[`  Runner: scripts/controlled-dev-regression. Test: ${v.regression.testId}. Criterion: ${v.regression.criterion}.`,
+        `  Required outcome: baseline reports ${v.regression.expectedFailure}; candidate passes.`]:[]),...(v.kind==='CANDIDATE_TEST'?[`  Pytest configuration: ${v.configPath}`,"  These tests will run after the specified files are created."]:[]),...(v.kind==='CONTENT'?["  Expected content (exact lines):",...v.expectedLines.map(l=>`    ${l}`)]:[])]),
     ...(draft.validationPlan.some(v=>v.kind==='EXISTING_TEST')?["Existing tests will execute code in the working copy."]:[]),
     ...(draft.validationPlan.some(v=>v.kind==='CANDIDATE_TEST')?["Pytest will run only the specified tests. It will not save temporary cache or bytecode files. It will load built-in plugins and those required by the tests. At least one test must pass; skipping all tests is insufficient."]:[]),
     "Checks will run only after the required authorizations."].join('\n');

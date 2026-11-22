@@ -276,6 +276,12 @@ Supported checks include exact contents, observed existing npm/pytest/Cargo/Mave
 
 Only after confirmation does the host build, validate and persist configuration: in the Pi profile for older projects, or `.controlled-dev` after storage adoption. You need not write JavaScript, shell, argv or JSON. Creation does not replace implementation/completion gates; there is no public editor for frozen TaskSpec. A prepared, active or incomplete task prevents a second one in the same project.
 
+## Require a regression check
+
+Commit the project's executable `scripts/controlled-dev-regression` adapter before creating the bug-fix task. In **Checks**, ask Scout for a `REGRESSION` check and confirm the test ID, the expected defect code, the selected test and fixture files, and the acceptance criterion. The host runs it after Developer hands off the candidate. Under **Status → Checks**, the baseline must report the expected defect and the candidate must pass. A setup error or a baseline that already passes leaves reproduction unverified.
+
+The [adapter protocol and limits](README.md#regression-checks-with-the-projects-test-runner) describe what the repository needs to provide.
+
 # Start the task
 
 Use `/controlled-dev run`. The host locates the current project's task, verifies the environment, acquires exclusive control and dispatches Scout. Developer requires the guided authorization before writing a separate copy. Do not repeat `run` to recover an interrupted task; use recovery commands.

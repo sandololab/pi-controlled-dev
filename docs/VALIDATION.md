@@ -2,7 +2,13 @@
 
 **English** · [Italiano](it/VALIDATION.md)
 
-Current release: **0.1.0**. Historical campaign reports and current focused checks describe different revisions; earlier broad-suite failures remain explicitly recorded below. Removing the prerelease suffix does not change that evidence.
+Current release: **0.2.0**. Historical reports below describe the revisions tested at the time.
+
+## 0.2.0 regression verification
+
+The targeted implementation run used Linux and Node.js 22.22.1. Eight regression-specific cases passed with shell and Node.js test adapters. The 138-case validation, integration, autonomy and recovery group and the 81-case Scout, Reviewer and packaging group passed. These groups overlap with the standalone regression run. The release pull request records the full portable CI result. A live model-driven Pi/Paperclip acceptance run remains separate.
+
+See the [runner contract](../README.md#regression-checks-with-the-projects-test-runner) for the supported inputs and baseline limits.
 
 ## 0.1.0 numbering and documentation release — 8 November 2026
 

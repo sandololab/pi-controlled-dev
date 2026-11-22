@@ -1,10 +1,10 @@
 # pi-controlled-dev
 
-**0.1.0** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit confirmations by an authorized operator.
+**0.2.0** — guided development for Pi Coding Agent, with isolated working copies, host-run checks, independent review and explicit confirmations by an authorized operator.
 
 Describe the software result you want. Review the proposed plan, choose supervised execution or approve bounded autonomy, and follow each task through implementation, verification and integration.
 
-**Current release:** 0.1.0 includes Pi 1.5 builtin-read compatibility, delegated local Git preparation, progressive source discovery and orderly continuation of a saved Pi session. A real same-session task completed through Scout, Developer, checks and Reviewer. This is focused evidence, not a new clean full-suite run or production qualification. Read the [release notes](CHANGELOG.md) and [validation status](docs/VALIDATION.md) for exact coverage and remaining limits.
+**Current release:** 0.2.0 adds language-independent regression checks. A bug-fix task can verify that the project’s approved test reproduces the declared defect on the original Git baseline and passes on the candidate. See the [runner setup](#regression-checks-with-the-projects-test-runner), [changelog](CHANGELOG.md) and [validation status](docs/VALIDATION.md).
 
 The interface and agent guidance are in English. Documentation is available in [English](docs/README.md) and [Italiano](docs/it/README.md). See the complete [user manual](USER-MANUAL.md) / [manuale italiano](docs/it/USER-MANUAL.md).
 
@@ -29,7 +29,7 @@ Use a dedicated Pi profile and install the packages locally from the project fol
 ```sh
 export PI_CODING_AGENT_DIR="$HOME/.pi-controlled-dev"
 cd /path/to/project
-pi install git:github.com/sandololab/pi-controlled-dev@v0.1.0 -l
+pi install git:github.com/sandololab/pi-controlled-dev@v0.2.0 -l
 pi install npm:pi-subagents -l
 pi list
 ```
@@ -38,7 +38,7 @@ These commands follow Pi 1.5.0's [package documentation](https://github.com/eare
 
 The `-l` flag records packages in the project’s `.pi/settings.json`; keep the dedicated profile and credentials outside project sources. Include this non-secret configuration in the clean Git baseline before creating a task, and keep credentials outside the repository. Do not change it underneath an active task.
 
-The example pins release `v0.1.0`. Omitting the suffix follows the default branch; using `@COMMIT_SHA` pins an exact commit. Pinned tags and commits do not advance with later updates. To change a release pin, install the explicitly selected new tag after closing active work.
+The example pins release `v0.2.0`. Omitting the suffix follows the default branch; using `@COMMIT_SHA` pins an exact commit. Pinned tags and commits do not advance with later updates. To change a release pin, install the explicitly selected new tag after closing active work.
 
 To update an existing Git installation, close Pi normally, select the same Pi
 profile in your terminal, then run:
@@ -48,7 +48,7 @@ pi update git:github.com/sandololab/pi-controlled-dev
 ```
 
 Restart Pi afterward. Local development edits do not update GitHub or an installed
-Git copy automatically. Use 0.1.0 on the installation that creates and resumes an orderly local
+Git copy automatically. Use the same package version when creating and resuming an orderly local
 continuation. Older asynchronous process evidence requires beta.4 or later;
 shared saved copies require beta.3 or later.
 See [smaller saved copies](docs/CANDIDATE-STORAGE.md) and the
@@ -59,7 +59,7 @@ For an offline alternative, build a tarball with `npm pack --pack-destination "$
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.1.0.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.2.0.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev" -l
 ```
 
@@ -302,7 +302,7 @@ npm pack --dry-run
 The installation probe is separate:
 
 ```sh
-P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.1.0.tgz" \
+P17_PACKAGE_TARBALL="$HOME/Downloads/pi-controlled-dev-0.2.0.tgz" \
   node --test test/product-install.test.mjs
 ```
 

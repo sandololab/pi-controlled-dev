@@ -1,6 +1,6 @@
 {
   "name": "pi-controlled-dev",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Guided, isolated development tasks for Pi with independent review, operator confirmations and durable recovery",
   "private": true,
   "license": "UNLICENSED",

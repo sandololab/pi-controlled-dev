@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0]
 
 - Add language-independent regression checks. A project-owned adapter runs the approved test against the task baseline and the frozen candidate. The check requires the declared defect on the baseline and a pass on the candidate.
 - Link the check to its acceptance criterion and show both attributed outcomes to Reviewer. Promotion and integration rerun the check against the integrated tree.

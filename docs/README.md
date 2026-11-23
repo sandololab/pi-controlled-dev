@@ -32,7 +32,7 @@ Start with the user manual. Architecture, protocol and the protocol test matrix 
 
 ## Current release and Paperclip
 
-Release **0.2.0** adds paired regression checks using a project-owned test runner. See the [runner setup](../README.md#regression-checks-with-the-projects-test-runner). Read the [Paperclip integration and agent setup guide](integrations/paperclip.md), [changelog](../CHANGELOG.md) and [validation status](VALIDATION.md). Historical release records below keep their original identifiers.
+Release **0.2.1** improves Paperclip command retries and local worker shutdown. It includes paired regression checks using a project-owned test runner. See the [runner setup](../README.md#regression-checks-with-the-projects-test-runner). Read the [Paperclip integration and agent setup guide](integrations/paperclip.md), [changelog](../CHANGELOG.md) and [validation status](VALIDATION.md). Historical release records below keep their original identifiers.
 
 ## Builtin read compatibility correction
 

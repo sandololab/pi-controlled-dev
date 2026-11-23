@@ -1,6 +1,6 @@
 ---
 title: "pi-controlled-dev"
-subtitle: "User manual — version 0.2.0"
+subtitle: "User manual — version 0.2.1"
 lang: en-US
 toc-title: Contents
 ---
@@ -9,7 +9,7 @@ toc-title: Contents
 
 # What is pi-controlled-dev?
 
-pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.2.0**, a numbered release; some interruptions still require operator intervention. See the [Paperclip integration guide](docs/integrations/paperclip.md) for agent configuration.
+pi-controlled-dev is a package for Pi Coding Agent. It delegates development to distinct roles, with explicit boundaries, verification and human decisions. This manual covers **0.2.1**, a numbered release; some interruptions still require operator intervention. See the [Paperclip integration guide](docs/integrations/paperclip.md) for agent configuration.
 
 All package interface text, generated explanations and role instructions use English. You may describe your objective in another language. Your words, source contents, exact evidence and historical records are preserved verbatim; they are not silently translated. English and Italian documentation both use the actual English menu labels.
 
@@ -242,7 +242,7 @@ For a tarball in Downloads:
 ```sh
 npm install --prefix "$HOME/.local/share/pi-controlled-dev" \
   --ignore-scripts --omit=dev --omit=optional \
-  "$HOME/Downloads/pi-controlled-dev-0.2.0.tgz"
+  "$HOME/Downloads/pi-controlled-dev-0.2.1.tgz"
 pi install "$HOME/.local/share/pi-controlled-dev/node_modules/pi-controlled-dev"
 pi install npm:pi-subagents
 pi list

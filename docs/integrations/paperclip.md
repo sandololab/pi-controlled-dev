@@ -1,6 +1,6 @@
 # Paperclip integration and agent setup
 
-This guide covers **pi-controlled-dev 0.2.0**. It describes configuration, existing interfaces and the optional [Paperclip human transport](../../integrations/paperclip/README.md). The transport hosts a live native Pi session and retains its confirmation/recovery boundaries; it requires explicit host configuration and separate real human acceptance before production adoption.
+This guide covers **pi-controlled-dev 0.2.1**. It describes configuration, existing interfaces and the optional [Paperclip human transport](../../integrations/paperclip/README.md). The transport hosts a live native Pi session and retains its confirmation/recovery boundaries; it requires explicit host configuration and separate real human acceptance before production adoption.
 
 ## Choose the right tool
 
@@ -29,7 +29,7 @@ Run these in the **shell**, inside the project being developed, not inside the p
 ```sh
 export PI_CODING_AGENT_DIR="$HOME/.pi-controlled-dev"
 cd /path/to/project
-pi install git:github.com/sandololab/pi-controlled-dev@v0.2.0 -l
+pi install git:github.com/sandololab/pi-controlled-dev@v0.2.1 -l
 pi install npm:pi-subagents -l
 pi list
 pi --list-models

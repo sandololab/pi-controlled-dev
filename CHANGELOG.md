@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Reuse the same Paperclip command ID and payload across retries to recover its original result without invoking the native worker again.
+- Start the native Paperclip worker shutdown and watchdog after authenticating the assignment. Record remote interaction and monitor cleanup failures alongside local shutdown evidence.
+
 ## [0.2.0]
 
 - Add language-independent regression checks. A project-owned adapter runs the approved test against the task baseline and the frozen candidate. The check requires the declared defect on the baseline and a pass on the candidate.

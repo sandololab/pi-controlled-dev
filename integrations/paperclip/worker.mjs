@@ -78,7 +78,7 @@ while(alive){
   const held=pending.get(message.requestId);if(!held||message.requestDigest!==held.request.digest){emit({type:'protocol-error',error:'BRIDGE_RESPONSE_BINDING'});continue;}
   pending.delete(message.requestId);
   if(message.cancelled)held.reject(Error('BRIDGE_HUMAN_REQUEST_CANCELLED'));else held.resolve(message);
- }else if(message.type==='command')execute(message).catch(e=>emit({type:'command-failed',error:redact(e.message)}));
+ }else if(message.type==='command')execute(message).catch(e=>emit({type:'command-failed',commandId:message.commandId,error:redact(e.message)}));
  else if(message.type==='stop'){
   alive=false;for(const q of pending.values())q.reject(Error('BRIDGE_STOPPED'));
   try{

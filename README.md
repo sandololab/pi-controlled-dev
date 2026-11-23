@@ -12,6 +12,8 @@ The interface and agent guidance are in English. Documentation is available in [
 
 See the [English Paperclip integration guide](docs/integrations/paperclip.md) for agent setup, project-local packages, skill routing, reusable instructions, native session recovery and a small acceptance test. Paperclip owns company assignments and external acceptance; the package owns its controlled development state. Interactive confirmations require a working native Pi terminal or a separately verified supported host interface. Installing a package does not add that interface to a headless adapter.
 
+The [Paperclip adapter guide](integrations/paperclip/README.md#continuation-stop-and-recovery) covers command IDs for safe retries and local shutdown when remote cleanup fails.
+
 ## Requirements
 
 - Node.js **>=22.19.0**, npm, Git and Pi Coding Agent.

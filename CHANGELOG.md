@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.1]
 
 - Reuse the same Paperclip command ID and payload across retries to recover its original result without invoking the native worker again.
 - Start the native Paperclip worker shutdown and watchdog after authenticating the assignment. Record remote interaction and monitor cleanup failures alongside local shutdown evidence.

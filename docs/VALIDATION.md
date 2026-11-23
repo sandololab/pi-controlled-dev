@@ -2,7 +2,11 @@
 
 **English** · [Italiano](it/VALIDATION.md)
 
-Current release: **0.2.0**. Historical reports below describe the revisions tested at the time.
+Current release: **0.2.1**. Historical reports below describe the revisions tested at the time.
+
+## 0.2.1 Paperclip verification
+
+The [Paperclip implementation CI](https://github.com/sandololab/pi-controlled-dev/actions/runs/45131883380) passed TypeScript and the portable suite on Ubuntu 24.04 with Node.js 22.22.1 (1,437 passed, zero failed, two skipped). The targeted local run passed 33 tests using a synthetic Paperclip HTTP server and child workers. Three additional integration tests passed with Pi SDK 1.5.2 and pi-subagents 0.88.1 without model requests. Live Paperclip acceptance remains pending.
 
 ## 0.2.0 regression verification
 

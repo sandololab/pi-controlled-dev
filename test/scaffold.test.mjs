@@ -235,7 +235,7 @@ test('P2-TEST-004 — only four controlled roles are operational; markdown profi
 
 test('P2-TEST-005 — package metadata and archive inventory', () => {
   assert.equal(manifest.name, 'pi-controlled-dev');
-  assert.match(manifest.version, /^(?:0\.1\.0(?:-beta\.\d+)?|0\.2\.0)$/);
+  assert.match(manifest.version, /^(?:0\.1\.0(?:-beta\.\d+)?|0\.2\.[0-9]+)$/);
   const lock=JSON.parse(read('package-lock.json'));assert.equal(lock.version,manifest.version);assert.equal(lock.packages[''].version,manifest.version);
   assert.equal(manifest.type, 'module');
   assert.equal(manifest.private, true); // npm publication stays disabled; GitHub is public.
